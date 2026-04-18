@@ -5,3 +5,7 @@ PyMuPDF
 chromadb
 markdown
 pdfkit
+langgraph
+langchain-openai
+langchain-core
+pydantic
