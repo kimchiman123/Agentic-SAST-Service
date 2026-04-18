@@ -81,16 +81,30 @@ def _render_semgrep_finding(idx: int, finding: Dict[str, Any]) -> str:
         "",
     ]
 
+    if not is_tp and finding.get("false_positive_reason"):
+        lines.extend([
+            "**💡 오탐 판단 사유:**",
+            f"> {finding['false_positive_reason']}",
+            "",
+        ])
+
+    if finding.get("taint_analysis"):
+        lines.extend([
+            "**🔄 데이터 흐름 추적 (Taint Analysis):**",
+            f"> {finding['taint_analysis']}",
+            "",
+        ])
+
     if finding.get("exploit_scenario"):
         lines.extend([
-            "**공격 시나리오:**",
+            "**💥 공격 시나리오:**",
             f"> {finding['exploit_scenario']}",
             "",
         ])
 
     if finding.get("affected_code"):
         lines.extend([
-            "**취약 코드:**",
+            "**⚠️ 취약 원본 코드:**",
             "```",
             _clean_code_block(finding["affected_code"]),
             "```",
@@ -99,7 +113,7 @@ def _render_semgrep_finding(idx: int, finding: Dict[str, Any]) -> str:
 
     if finding.get("remediation_code"):
         lines.extend([
-            "**수정 코드:**",
+            "**🛡️ 수정 패치 코드 (Remediation):**",
             "```",
             _clean_code_block(finding["remediation_code"]),
             "```",
@@ -137,16 +151,23 @@ def _render_deep_finding(idx: int, finding: Dict[str, Any]) -> str:
         "",
     ]
 
+    if finding.get("taint_analysis"):
+        lines.extend([
+            "**🔄 데이터 흐름 추적 (Taint Analysis):**",
+            f"> {finding['taint_analysis']}",
+            "",
+        ])
+
     if finding.get("exploit_scenario"):
         lines.extend([
-            "**공격 시나리오:**",
+            "**💥 공격 시나리오:**",
             f"> {finding['exploit_scenario']}",
             "",
         ])
 
     if finding.get("affected_code"):
         lines.extend([
-            "**취약 코드:**",
+            "**⚠️ 취약 원본 코드:**",
             "```",
             _clean_code_block(finding["affected_code"]),
             "```",
@@ -155,7 +176,7 @@ def _render_deep_finding(idx: int, finding: Dict[str, Any]) -> str:
 
     if finding.get("remediation_code"):
         lines.extend([
-            "**수정 코드:**",
+            "**🛡️ 수정 패치 코드 (Remediation):**",
             "```",
             _clean_code_block(finding["remediation_code"]),
             "```",
@@ -201,22 +222,53 @@ def format_report(all_findings: List[Dict[str, Any]]) -> str:
         "# 🛡️ Agentic-SAST-Guardian 보안 분석 리포트",
         "",
         f"**분석 일시:** {now}",
-        f"**분석 도구:** Semgrep + OpenAI GPT-5.4-mini Agent",
+        f"**분석 도구:** Semgrep + OpenAI GPT Agent",
         "",
         "---",
         "",
-        "## 📊 취약점 요약",
+        "## 📑 1. 경영진 요약 (Executive Summary)",
+        "",
+        "### 📊 1.1 발견된 취약점 통계 요약",
         "",
         _build_summary_table(all_findings),
         "",
     ]
 
+    # ISMS-P 위반 요약 (상단부 이동)
+    isms_violations = [
+        f for f in all_findings
+        if f.get("isms_p_violation") and f["isms_p_violation"] != "null"
+    ]
+    if isms_violations:
+        report_lines.extend([
+            "### ⚖️ 1.2 ISMS-P 컴플라이언스 총평",
+            "",
+            f"이번 분석에서 총 **{len(isms_violations)}건**의 ISMS-P 인증기준 위반 또는 위반 의심 사례가 탐지되었습니다. 개발팀은 본 리포트의 세부 항목을 참고하여 우선적으로 조치하시기 바랍니다.",
+            "",
+            "| # | ISMS-P 위반 핵심 내용 | 관련 취약점 | 심각도 |",
+            "|---|-----------------------|------------|--------|",
+        ])
+        for i, v in enumerate(isms_violations, 1):
+            title = v.get("title", "N/A")
+            violation = v.get("isms_p_violation", "N/A")
+            # 긴 위반 설명은 테이블에서 줄바꿈 방지를 위해 50자로 자름 처리
+            short_violation = violation if len(violation) < 50 else violation[:47] + "..."
+            sev = v.get("severity", "N/A")
+            emoji = SEVERITY_EMOJI.get(sev, "")
+            report_lines.append(f"| {i} | {short_violation} | {title} | {emoji} {sev} |")
+        report_lines.append("")
+
+    report_lines.extend([
+        "---",
+        "",
+        "## 🔍 2. 세부 분석 결과 (Detailed Findings)",
+        "",
+    ])
+
     # Semgrep 검증 결과 섹션
     if semgrep_findings:
         report_lines.extend([
-            "---",
-            "",
-            "## 🔍 Semgrep 탐지 결과 (Agent 검증 완료)",
+            "### 🛠️ 2.1 Semgrep 기본 탐지 결과 (AI 2차 검증됨)",
             "",
         ])
         for i, finding in enumerate(semgrep_findings, 1):
@@ -225,54 +277,24 @@ def format_report(all_findings: List[Dict[str, Any]]) -> str:
     # 심층 분석 결과 섹션
     if deep_findings:
         report_lines.extend([
-            "---",
-            "",
-            "## 🧠 AI 심층 분석 결과 (비즈니스 로직 취약점)",
+            "### 🧠 2.2 비즈니스 로직 심층 분석 결과",
             "",
         ])
         for i, finding in enumerate(deep_findings, 1):
             report_lines.append(_render_deep_finding(i, finding))
 
-    # 결과 없음
+    # 결과 없음 처리
     if not all_findings:
         report_lines.extend([
-            "---",
-            "",
-            "## ✅ 분석 결과",
-            "",
             "현재 스캔 범위 내에서 보안 취약점이 발견되지 않았습니다.",
             "",
         ])
 
-    # ISMS-P 컴플라이언스 요약 섹션
-    isms_violations = [
-        f for f in all_findings
-        if f.get("isms_p_violation") and f["isms_p_violation"] != "null"
-    ]
-    if isms_violations:
-        report_lines.extend([
-            "---",
-            "",
-            "## ⚖️ ISMS-P 컴플라이언스 위반 요약",
-            "",
-            f"총 **{len(isms_violations)}건**의 ISMS-P 인증기준 위반이 감지되었습니다.",
-            "",
-            "| # | 위반 항목 | 관련 취약점 | 심각도 |",
-            "|---|-----------|------------|--------|",
-        ])
-        for i, v in enumerate(isms_violations, 1):
-            title = v.get("title", "N/A")
-            violation = v.get("isms_p_violation", "N/A")
-            sev = v.get("severity", "N/A")
-            emoji = SEVERITY_EMOJI.get(sev, "")
-            report_lines.append(f"| {i} | {violation} | {title} | {emoji} {sev} |")
-        report_lines.append("")
-
     report_lines.extend([
         "---",
         "",
-        "*본 리포트는 Agentic-SAST-Guardian에 의해 자동 생성되었습니다.*",
-        f"*ISMS-P 인증기준 안내서(2023.11.23) 기반 컴플라이언스 검증 포함*",
+        "*본 전체 리포트는 Agentic-SAST-Guardian 프로세스에 의해 자동 생성되었습니다.*",
+        f"*ISMS-P 인증기준 안내서(2023.11.23) 기반 컴플라이언스 검증이 포함되었습니다.*",
     ])
 
     return "\n".join(report_lines)
