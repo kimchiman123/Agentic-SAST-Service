@@ -4,6 +4,7 @@ Agent가 반환한 취약점 데이터를 Markdown 형식의 보고서로 변환
 """
 from datetime import datetime
 from typing import Any, Dict, List
+import re
 
 # 심각도별 이모지 매핑
 SEVERITY_EMOJI = {
@@ -24,6 +25,20 @@ def _sort_by_severity(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         findings,
         key=lambda f: SEVERITY_ORDER.get(f.get("severity", "INFO"), 5)
     )
+
+
+def _clean_code_block(code_str: Any) -> str:
+    """LLM이 반환한 코드 스니펫에서 불필요한 마크다운 백틱(```)을 안전하게 제거합니다."""
+    if not isinstance(code_str, str):
+        return str(code_str)
+    code_str = code_str.strip()
+    # 시작 부분의 ``` 및 언어 식별자 제거 (예: ```javascript)
+    code_str = re.sub(r"^```[a-zA-Z0-9_\-\+]*\n", "", code_str)
+    code_str = re.sub(r"^```", "", code_str)
+    # 끝 부분의 ``` 제거
+    code_str = re.sub(r"\n```$", "", code_str)
+    code_str = re.sub(r"```$", "", code_str)
+    return code_str.strip()
 
 
 def _build_summary_table(findings: List[Dict[str, Any]]) -> str:
@@ -77,7 +92,7 @@ def _render_semgrep_finding(idx: int, finding: Dict[str, Any]) -> str:
         lines.extend([
             "**취약 코드:**",
             "```",
-            finding["affected_code"],
+            _clean_code_block(finding["affected_code"]),
             "```",
             "",
         ])
@@ -86,7 +101,7 @@ def _render_semgrep_finding(idx: int, finding: Dict[str, Any]) -> str:
         lines.extend([
             "**수정 코드:**",
             "```",
-            finding["remediation_code"],
+            _clean_code_block(finding["remediation_code"]),
             "```",
             "",
         ])
@@ -133,7 +148,7 @@ def _render_deep_finding(idx: int, finding: Dict[str, Any]) -> str:
         lines.extend([
             "**취약 코드:**",
             "```",
-            finding["affected_code"],
+            _clean_code_block(finding["affected_code"]),
             "```",
             "",
         ])
@@ -142,7 +157,7 @@ def _render_deep_finding(idx: int, finding: Dict[str, Any]) -> str:
         lines.extend([
             "**수정 코드:**",
             "```",
-            finding["remediation_code"],
+            _clean_code_block(finding["remediation_code"]),
             "```",
             "",
         ])
