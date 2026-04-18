@@ -20,3 +20,5 @@ class AnalysisState(TypedDict):
     findings: List[Dict[str, Any]]
     needs_search: bool
     search_query: str
+    search_result: str
+    iteration: int

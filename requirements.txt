@@ -9,3 +9,4 @@ langgraph
 langchain-openai
 langchain-core
 pydantic
+duckduckgo-search

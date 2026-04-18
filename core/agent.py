@@ -13,6 +13,7 @@ from langgraph.graph import StateGraph, START, END
 
 from core.isms_rag import ISMSKnowledgeBase
 from core.state import AnalysisState
+from core.tools.web_search import perform_web_search
 
 
 # ──────────────────────────────────────────────
@@ -37,6 +38,8 @@ class FindingModel(BaseModel):
 
 class OutputModel(BaseModel):
     findings: List[FindingModel] = Field(default_factory=list)
+    needs_external_search: bool = Field(default=False, description="의존성 취약점(SCA)에 대한 최신 PoC이나 제로데이 동향 파악, 최신 우회기법 등 웹 검색이 필요한 경우 True 설정")
+    search_query: Optional[str] = Field(default=None, description="외부 검색 시 사용할 쿼리 (예: 'CVE-2023-xxxx exploit payload' 또는 'MongoDB NoSQL injection bypass cheat sheet')")
 
 
 # ──────────────────────────────────────────────
@@ -59,24 +62,21 @@ Semgrep 정적 분석 도구가 탐지한 취약점 결과를 검증하고, 오�
 3. 실제 취약점(True Positive)인 경우, 데이터가 어디서 입력되어(Source) 어디서 취약점이 터지는지(Sink) 설명하는 'taint_analysis'를 작성하세요.
 4. 구체적인 공격 시나리오(PoC)와 수정 코드를 작성하세요.
 5. 심각도를 재평가하여 CRITICAL | HIGH | MEDIUM | LOW | INFO 중 하나로 분류하세요.
-6. ISMS-P 관련 규약이 함께 제공된 경우, 해당 규약의 위반 여부도 반드시 평가하세요."""
+6. 만약 제공된 정보만으로 최신 취약점 검증이나 PoC 작성이 모호하다면 `needs_external_search`를 true로 설정하고 검색 쿼리를 지정하세요.
+7. ISMS-P 관련 규약이 함께 제공된 경우, 해당 규약의 위반 여부도 반드시 평가하세요."""
 
 SYSTEM_PROMPT_DEEP_ANALYSIS = """당신은 클라우드 네이티브 환경 및 금융/보안 도메인에 정통한 수석 보안 감사관(Senior Security Auditor)입니다.
 
 ## 역할
 일반적인 정적 분석 도구(SAST)나 패턴 매칭으로는 발견하기 어려운 **'비즈니스 로직 결함(Business Logic Vulnerabilities)'**을 식별하는 심층 코드 감사(Code Audit)를 수행합니다.
 
-## 중점 분석 항목
+## 분석 지침
 1. **인가 검증 누락 (Broken Access Control):** ID조작으로 타인 리소스 접근 가능 여부 (IDOR)
 2. **경쟁 상태 (Race Condition):** 동시 다발적 요청에 대한 데이터 무결성 훼손 여부
 3. **입력값 검증에 따른 로직 우회:** 비정상 파라미터를 이용한 우회
-4. **상태 관리 결함:** 토큰/세션 상태 검증 누락
-5. **민감 정보 노출:** 로그, 응답 에러 메시지를 통한 노출
-
-## 분석 지침
-1. 제공된 코드만을 근거로 판단하세요. 일반적 문법 오류나 Lint 경고는 무시하세요.
-2. 실제 해커 관점에서 타격을 줄 수 있는 익스플로잇 가능한 시나리오와 데이터 흐름(Taint Analysis)만 기술하세요.
-3. 취약점이 없으면 빈 배열을 반환하세요."""
+4. 실제 해커 관점에서 타격을 줄 수 있는 익스플로잇 가능한 시나리오와 데이터 흐름(Taint Analysis)만 기술하세요.
+5. 정보가 불충분하여 우회 패턴 확인이 필요하면 `needs_external_search`를 true로 응답하세요.
+6. 취약점이 없으면 빈 배열을 반환하세요."""
 
 
 # ──────────────────────────────────────────────
@@ -85,10 +85,9 @@ SYSTEM_PROMPT_DEEP_ANALYSIS = """당신은 클라우드 네이티브 환경 및 
 
 class OpenAIAgent:
     """
-    Phase 1: LangGraph 기반으로 리팩토링된 최신 Agent.
+    Phase 3: LangGraph + 외부 검색(SerpAPI) 라우팅 기능을 결합한 완전 자율형 Agent.
     """
 
-    # GPT 모델명 (환경에 따라 변경 가능)
     MODEL_NAME = "gpt-5.4-mini"
 
     def __init__(self, isms_kb: Optional[ISMSKnowledgeBase] = None, osv_vulns: Optional[List[Dict[str, Any]]] = None) -> None:
@@ -108,14 +107,33 @@ class OpenAIAgent:
         """LangGraph 워크플로우를 조립합니다."""
         workflow = StateGraph(AnalysisState)
         
-        # 메인 분석 노드
+        # 노드 선언
         workflow.add_node("analyze_node", self._analyze_node)
+        workflow.add_node("search_node", self._search_node)
         
-        # 간단한 단방향 파이프라인 (Phase 1)
+        # 제어 흐름(Edge) 선언
         workflow.add_edge(START, "analyze_node")
-        workflow.add_edge("analyze_node", END)
+        workflow.add_conditional_edges("analyze_node", self._should_search)
+        workflow.add_edge("search_node", "analyze_node")
         
         return workflow.compile()
+
+    def _should_search(self, state: AnalysisState) -> str:
+        """라우터 로직: 검색 필요 시 검색 노드로 회귀, 아니면 종료."""
+        if state.get("needs_search") and state.get("iteration", 0) < 1:
+            return "search_node"
+        return END
+
+    def _search_node(self, state: AnalysisState) -> AnalysisState:
+        """실제 웹 검색을 수행하고 결과를 상태(State)에 주입합니다."""
+        query = state.get("search_query", "")
+        print(f"  [🔍] Agent 능동형 웹 검색 실행 중 (query: '{query}')")
+        res = perform_web_search(query)
+        
+        state["search_result"] = res
+        state["iteration"] = state.get("iteration", 0) + 1
+        state["needs_search"] = False
+        return state
 
     def _analyze_node(self, state: AnalysisState) -> AnalysisState:
         """단일 컨텍스트에 대해 LLM 분석을 수행하는 노드"""
@@ -137,15 +155,21 @@ class OpenAIAgent:
                 f"위 코드에서 비즈니스 로직 결함을 분석하고, ISMS-P 규약 위반 여부도 함께 평가해주세요."
             )
 
-        # ISMS-P RAG 및 OSV SCA 컨텍스트 주입
         extra_context = ""
+
+        # 웹 검색 결과가 존재한다면 주입 (2번째 사이클)
+        search_res = state.get("search_result", "")
+        if search_res:
+            extra_context += f"## [중요] 이전 판단에 따른 최신 웹 검색 결과 참조데이터\n해당 웹 검색 내역을 적극 수용하여 최종 포착(PoC)된 내역인지 다시 평가하세요:\n{search_res}\n\n"
         
+        # OSV SCA 컨텍스트 주입
         if self.osv_vulns:
             extra_context += "## 알려진 외부 라이브러리 취약점 (SCA 결과)\n"
             for v in self.osv_vulns:
                 extra_context += f"- 패키지: {v['package']} v{v['version']} | {v['cve_id']}: {v['summary']}\n"
             extra_context += "위 라이브러리 취약점을 참고하여, 비즈니스 로직과 결합되어 실제로 보안 위협이 되는지 평가하세요.\n\n"
 
+        # ISMS-P RAG 적용
         if self.isms_kb:
             isms_ref = self.isms_kb.search_for_code_context(code_snippet[:500], file_path)
             if isms_ref:
@@ -166,7 +190,6 @@ class OpenAIAgent:
             
             parsed_findings = []
             for f in result.findings:
-                # None 값을 제거하고 Dict로 직렬화
                 f_dict = f.model_dump(exclude_none=True)
                 f_dict["source"] = "semgrep_verified" if ctype == "semgrep" else "deep_analysis"
                 if ctype == "semgrep":
@@ -174,6 +197,8 @@ class OpenAIAgent:
                 parsed_findings.append(f_dict)
                 
             state["findings"] = parsed_findings
+            state["needs_search"] = result.needs_external_search
+            state["search_query"] = result.search_query or ""
             
         except Exception as e:
             print(f"[!] LangChain LLM 추론 실패 ({file_path}): {e}")
@@ -184,13 +209,15 @@ class OpenAIAgent:
     def analyze_semgrep_findings(self, contexts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         all_findings = []
         for i, ctx in enumerate(contexts):
-            print(f"  [→] Semgrep 결과 분석 중... ({i + 1}/{len(contexts)}) {ctx.get('file_path', '')}")
+            print(f"  [→] Semgrep 결과 검증 중... ({i + 1}/{len(contexts)}) {ctx.get('file_path', '')}")
             initial_state: AnalysisState = {
                 "context": ctx,
                 "context_type": "semgrep",
                 "findings": [],
                 "needs_search": False,
-                "search_query": ""
+                "search_query": "",
+                "search_result": "",
+                "iteration": 0
             }
             result_state = self.graph.invoke(initial_state)
             all_findings.extend(result_state.get("findings", []))
@@ -210,7 +237,9 @@ class OpenAIAgent:
                 "context_type": "deep_analysis",
                 "findings": [],
                 "needs_search": False,
-                "search_query": ""
+                "search_query": "",
+                "search_result": "",
+                "iteration": 0
             }
             result_state = self.graph.invoke(initial_state)
             all_findings.extend(result_state.get("findings", []))
