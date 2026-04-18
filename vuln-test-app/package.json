@@ -1,0 +1,9 @@
+{
+  "name": "vuln-test-app",
+  "version": "1.0.0",
+  "description": "Intentionally vulnerable app for testing SAST",
+  "main": "app.js",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

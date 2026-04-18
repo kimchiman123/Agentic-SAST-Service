@@ -1,0 +1,7 @@
+openai
+python-dotenv
+openpyxl
+PyMuPDF
+chromadb
+markdown
+pdfkit
