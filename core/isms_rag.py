@@ -133,10 +133,15 @@ def parse_pdf_guide(pdf_path: str = PDF_PATH, chunk_size: int = 1500) -> List[Di
 
             chunk_text = text[start:end].strip()
             if chunk_text:
+                # PDF 청크 내에서 ISMS-P 조항 번호 추출 시도 (예: 2.6.1)
+                clause_match = re.search(r'(?:^|\s)((?:1|2|3)\.\d+\.\d+)(?:\s|[^\d]|$)', chunk_text)
+                item_no = clause_match.group(1).strip() if clause_match else ""
+
                 chunks.append({
                     "source": "pdf_guide",
                     "page": str(page_num + 1),
                     "chunk_index": str(chunk_idx),
+                    "item_no": item_no,
                     "text": chunk_text,
                 })
                 chunk_idx += 1
@@ -208,6 +213,7 @@ class ISMSKnowledgeBase:
                 "source": "pdf_guide",
                 "page": chunk["page"],
                 "chunk_index": chunk["chunk_index"],
+                "item_no": chunk.get("item_no", ""),
             })
             ids.append(f"pdf_{i}")
 
@@ -285,9 +291,27 @@ class ISMSKnowledgeBase:
         Returns:
             Agent 프롬프트에 삽입할 ISMS-P 참조 텍스트
         """
-        # 파일 경로와 코드에서 보안 관련 키워드를 조합하여 검색
-        search_query = f"파일: {file_path}\n코드 키워드: {code_snippet[:300]}"
-        results = self.search(search_query, n_results=3)
+        # [개선] 단순 코드를 넣는 대신, 보안 키워드를 추출(Query Expansion)하여 검색 정확도를 높입니다.
+        code_lower = code_snippet.lower()
+        path_lower = file_path.lower()
+
+        keywords = []
+        if any(k in code_lower for k in ["password", "bcrypt", "hash", "crypto"]):
+            keywords.extend(["비밀번호", "암호화", "해시", "비밀번호 일방향 암호화", "안전한 알고리즘"])
+        if any(k in code_lower for k in ["login", "auth", "session"]) or "auth" in path_lower:
+            keywords.extend(["인증", "세션", "식별", "접근 대상", "사용자 인증"])
+        if any(k in code_lower for k in ["jwt", "token"]):
+            keywords.extend(["토큰", "세션 탈취", "안전한 세션 관리"])
+        if any(k in code_lower for k in ["user", "profile"]):
+            keywords.extend(["개인정보", "사용자 식별", "개인정보 보호"])
+        if any(k in code_lower for k in ["eval", "exec", "shell"]):
+            keywords.extend(["입력 데이터 검증", "악의적 코드 실행", "취약점"])
+
+        keyword_str = " ".join(list(set(keywords)))
+
+        # 검색 쿼리 재구성: 관련 키워드 + 코드 일부 결합 (Hybrid Approach 대용)
+        search_query = f"보안 규제 키워드: {keyword_str}\n관련 코드 컨텍스트: {code_snippet[:200]}"
+        results = self.search(search_query, n_results=4)
 
         if not results:
             return ""
