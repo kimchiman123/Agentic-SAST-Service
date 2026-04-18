@@ -103,23 +103,61 @@ def run_pipeline(target_path: str) -> None:
     # ──────────────────────────────────────
     #  STEP 5: 리포트 생성
     # ──────────────────────────────────────
-    print("[Phase 5] 분석 리포트 생성 중...")
+    print("[Phase 5] 분석 리포트 및 메타데이터 산출물 생성 중...")
+    from datetime import datetime
+    import json
+    import csv
+
+    # reports 폴더 생성
+    reports_dir = os.path.join(os.getcwd(), "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_filename = f"sast_report_{timestamp}"
+
     report = format_report(all_findings)
 
-    # Markdown 리포트 저장
-    md_output = os.path.join(os.getcwd(), "sast_report.md")
+    # 1. 파일 경로 설정
+    md_output = os.path.join(reports_dir, f"{base_filename}.md")
+    pdf_output = os.path.join(reports_dir, f"{base_filename}.pdf")
+    json_output = os.path.join(reports_dir, f"sast_findings_{timestamp}.json")
+    csv_output = os.path.join(reports_dir, f"sast_summary_{timestamp}.csv")
+
+    # 2. Markdown 저장
     with open(md_output, "w", encoding="utf-8") as f:
         f.write(report)
 
-    # PDF/HTML 리포트 변환
-    pdf_output = os.path.join(os.getcwd(), "sast_report.pdf")
+    # 3. PDF/HTML 변환
     exported_path = export_pdf(report, pdf_output)
+
+    # 4. 개발자/CI(CD) 인테그레이션용 JSON Raw 데이터 저장
+    with open(json_output, "w", encoding="utf-8") as f:
+        json.dump({
+            "timestamp": timestamp, 
+            "total_findings": len(all_findings), 
+            "findings": all_findings
+        }, f, ensure_ascii=False, indent=2)
+
+    # 5. 경영진 대시보드 통계용 CSV 요약 데이터 저장
+    with open(csv_output, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["심각도", "취약점 제목", "발생지(파일)", "ISMS-P 위반사항", "취약점 유형코드"])
+        for finding in all_findings:
+            writer.writerow([
+                finding.get("severity", "INFO"),
+                finding.get("title", "제목 없음"),
+                finding.get("file_path", finding.get("original_file", "")),
+                finding.get("isms_p_violation", "해당 없음"),
+                finding.get("vulnerability_type", finding.get("rule_id", ""))
+            ])
 
     print(f"\n{'=' * 60}")
     print(f"[+] 분석 완료!")
     print(f"    총 발견된 취약점: {len(all_findings)}개")
-    print(f"    Markdown 리포트: {md_output}")
-    print(f"    PDF/HTML 리포트: {exported_path}")
+    print(f"    - Markdown 리포트:  {md_output}")
+    print(f"    - PDF/HTML 리포트:  {exported_path}")
+    print(f"    - 전산팀/개발자용(JSON): {json_output}")
+    print(f"    - 경영진/통계용(CSV):  {csv_output}")
     print(f"{'=' * 60}")
 
 
