@@ -91,7 +91,7 @@ class OpenAIAgent:
     # GPT 모델명 (환경에 따라 변경 가능)
     MODEL_NAME = "gpt-5.4-mini"
 
-    def __init__(self, isms_kb: Optional[ISMSKnowledgeBase] = None) -> None:
+    def __init__(self, isms_kb: Optional[ISMSKnowledgeBase] = None, osv_vulns: Optional[List[Dict[str, Any]]] = None) -> None:
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("[!] OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
@@ -101,6 +101,7 @@ class OpenAIAgent:
         self.structured_llm = self.llm.with_structured_output(OutputModel)
         
         self.isms_kb = isms_kb
+        self.osv_vulns = osv_vulns or []
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -136,11 +137,22 @@ class OpenAIAgent:
                 f"위 코드에서 비즈니스 로직 결함을 분석하고, ISMS-P 규약 위반 여부도 함께 평가해주세요."
             )
 
-        # ISMS-P RAG 적용
+        # ISMS-P RAG 및 OSV SCA 컨텍스트 주입
+        extra_context = ""
+        
+        if self.osv_vulns:
+            extra_context += "## 알려진 외부 라이브러리 취약점 (SCA 결과)\n"
+            for v in self.osv_vulns:
+                extra_context += f"- 패키지: {v['package']} v{v['version']} | {v['cve_id']}: {v['summary']}\n"
+            extra_context += "위 라이브러리 취약점을 참고하여, 비즈니스 로직과 결합되어 실제로 보안 위협이 되는지 평가하세요.\n\n"
+
         if self.isms_kb:
             isms_ref = self.isms_kb.search_for_code_context(code_snippet[:500], file_path)
             if isms_ref:
-                user_prompt += f"\n\n{isms_ref}"
+                extra_context += f"{isms_ref}\n\n"
+
+        if extra_context:
+            user_prompt += f"\n\n{extra_context}"
 
         # LLM 파이프라인 호출
         prompt_tmpl = ChatPromptTemplate.from_messages([

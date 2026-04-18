@@ -68,10 +68,21 @@ def run_pipeline(target_path: str) -> None:
         sys.exit(0)
 
     # ──────────────────────────────────────
+    #  STEP 3.5: OSV 외부 의존성 취약점 스캔 (SCA)
+    # ──────────────────────────────────────
+    import core.tools.osv_checker as osv_checker
+    print("[Phase 3.5] OSV.dev 모듈 트리 스캔 및 취약점 조회 중...")
+    osv_vulns = osv_checker.scan_dependencies(abs_target)
+    if osv_vulns:
+        print(f"  [!] 의존성 취약점 내역이 발견되었습니다. Agent 컨텍스트에 주입 중...\n")
+    else:
+        print("  [+] 알려진 의존성 취약점 없음.\n")
+
+    # ──────────────────────────────────────
     #  STEP 4: Agent 심층 분석 (ISMS-P RAG 연동)
     # ──────────────────────────────────────
     print("[Phase 4] AI Agent 심층 분석 실행 중...")
-    agent = OpenAIAgent(isms_kb=isms_kb)
+    agent = OpenAIAgent(isms_kb=isms_kb, osv_vulns=osv_vulns)
 
     all_findings: List[Dict[str, Any]] = []
 
