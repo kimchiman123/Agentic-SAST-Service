@@ -54,38 +54,32 @@ class OutputModel(BaseModel):
 #  2) 시스템 프롬프트
 # ──────────────────────────────────────────────
 
-SYSTEM_PROMPT_SEMGREP_ANALYSIS = """당신은 클라우드 네이티브 환경에서 10년 이상 경력을 가진 수석 보안 감사관(Senior Security Auditor)입니다.
+SYSTEM_PROMPT_SEMGREP_ANALYSIS = """[Role: Senior Application Security Engineer]
+당신의 목표는 SAST(Semgrep) 결과를 검증하여 오탐(FP)을 제거하고, 실제 취약점(TP)에 대한 완벽한 수정안을 제시하는 것입니다.
 
-## 역할
-Semgrep 정적 분석 도구가 탐지한 취약점 결과를 검증하고, 오탐(False Positive)을 필터링한 뒤 실제 위험이 존재하는 항목에 대해 데이터 흐름(Taint Analysis), 공격 시나리오, 그리고 안전한 수정 코드를 제시합니다.
-또한, 제공된 도구(read_source, search_code 등)를 활용하여 프로젝트 코드베이스를 심층적으로 탐색하고 전역 스코프나 연결된 로직을 적극적으로 추적하세요.
+[지시사항]
+1. 오탐(FP) 판별: 제공된 코드 문맥 상 공격자의 제어(User-Controlled Input)가 불가하거나 방어 로직이 있다면 완벽한 오탐으로 처리하세요.
+2. 실제 취약점(TP) 판별: 소스(입력)부터 싱크(실행부)까지 경로 증명, 페이로드 작성, 방어 코드 적용 방안을 준비하세요.
+3. 코드 문맥이 부족하다면 추측하지 말고 제공된 `read_source` 로 해당 라인을 확인하세요. (최대 1~2회 제한)
+4. (중요) 도구를 호출하거나 분석을 최종 완료하기 전, 반드시 해당 취약점에 대한 논리적인 추론 과정(Chain-of-Thought)을 먼저 텍스트로 길고 자세히 풀어서 출력하세요.
+5. 모든 문장 및 사고 과정은 한국어로 편하게 서술하세요.
+"""
 
-## 입력 데이터
-- Semgrep이 탐지한 취약점 정보 (규칙 ID, 심각도, 메시지)
-- 해당 취약점이 위치한 코드의 앞뒤 50줄 스니펫 (취약 라인은 >>> 마커로 표시됨)
-- 프로젝트 디렉토리 구조
+SYSTEM_PROMPT_DEEP_ANALYSIS = """[Role: Senior Application Security Engineer]
+당신의 목표는 정규식 위주의 SAST가 잡지 못하는 '비즈니스 로직 및 아키텍처 결함(Business Logic Flaws)'을 찾는 것입니다.
 
-## 분석 지침
-1. 제공된 스니펫만으로 부족할 경우 도구를 통해 더 많은 소스코드를 확인하세요. 추측이나 가정을 의존하지 마세요.
-2. 오탐(False Positive)인 경우, 'is_true_positive'를 false로 설정하고 'false_positive_reason'에 명확한 논거를 제시하세요.
-3. 실제 취약점(True Positive)인 경우, 데이터가 어디서 입력되어(Source) 어디서 취약점이 터지는지(Sink) 설명하는 'taint_analysis'를 작성하세요.
-4. 구체적인 공격 시나리오(PoC)와 수정 코드를 작성하세요.
-5. 심각도를 재평가하여 CRITICAL | HIGH | MEDIUM | LOW | INFO 중 하나로 분류하세요.
-6. 만약 제공된 정보만으로 최신 취약점 검증이나 PoC 작성이 모호하다면 `needs_external_search`를 true로 설정하고 검색 쿼리를 지정하세요.
-7. ISMS-P 관련 규약이 함께 제공된 경우, 해당 규약의 위반 여부도 반드시 평가하세요."""
+[주요 탐지 타겟]
+1. Broken Access Control (IDOR, 권한 우회)
+2. Race Condition (동시성 처리 오류)
+3. Input Logic Bypass (예상치 못한 값, 오버플로우 우회)
+4. Hardcoded Secrets (DB, API Key 등)
 
-SYSTEM_PROMPT_DEEP_ANALYSIS = """당신은 클라우드 네이티브 환경 및 금융/보안 도메인에 정통한 수석 보안 감사관(Senior Security Auditor)입니다.
-
-## 역할
-일반적인 정적 분석 도구(SAST)나 패턴 매칭으로는 발견하기 어려운 **'비즈니스 로직 결함(Business Logic Vulnerabilities)'**을 식별하는 심층 코드 감사(Code Audit)를 수행합니다.
-
-## 분석 지침
-1. **인가 검증 누락 (Broken Access Control):** ID조작으로 타인 리소스 접근 가능 여부 (IDOR)
-2. **경쟁 상태 (Race Condition):** 동시 다발적 요청에 대한 데이터 무결성 훼손 여부
-3. **입력값 검증에 따른 로직 우회:** 비정상 파라미터를 이용한 우회
-4. 실제 해커 관점에서 타격을 줄 수 있는 익스플로잇 가능한 시나리오와 데이터 흐름(Taint Analysis)만 기술하세요.
-5. 정보가 불충분하여 우회 패턴 확인이 필요하면 `needs_external_search`를 true로 응답하세요.
-6. 취약점이 없으면 빈 배열을 반환하세요."""
+[지시사항]
+- 제공된 코드를 분석하여 타겟에 해당하는 결함만 도출하세요.
+- 취약점이 전혀 없다면 억지로 만들어내지 마세요.
+- 실제 Exploit 가능한 결함만 확인하세요. (단순 네이밍 컨벤션 미준수 등은 무시)
+- (중요) 의심되는 로직에 결론을 내리거나 도구를 호출하기 전에, 반드시 해당 코드의 데이터 흐름과 취약 가능성에 대한 사고 과정(Chain-of-Thought)을 텍스트로 상세히 서술하세요!
+"""
 
 
 # ──────────────────────────────────────────────
@@ -114,7 +108,7 @@ class OpenAIAgent:
         
         # MCP 도구 목록 바인딩
         self.tools = [read_source, search_code]
-        self.mini_llm_with_tools = self.mini_llm.bind_tools(self.tools)
+        self.nano_llm_with_tools = self.nano_llm.bind_tools(self.tools)
         
         self.isms_kb = isms_kb
         self.osv_vulns = osv_vulns or []
@@ -208,7 +202,7 @@ class OpenAIAgent:
             return {"is_vulnerable_candidate": True}
 
     def _analyze_node(self, state: AnalysisState) -> dict:
-        """Stage 3: Analysis Agent (mini 모델 + MCP Tools) 딥다이브"""
+        """Stage 3: Analysis Agent (nano 모델 + MCP Tools) CoT 딥다이브"""
         ctx = state["context"]
         ctype = state["context_type"]
         messages = state.get("messages", [])
@@ -234,7 +228,7 @@ class OpenAIAgent:
         # LLM(Tool 바인딩됨) 실행 (React 에이전트 루프 수행)
         try:
             invoke_messages = messages + new_messages
-            response = self.mini_llm_with_tools.invoke(invoke_messages)
+            response = self.nano_llm_with_tools.invoke(invoke_messages)
             new_messages.append(response)
         except Exception as e:
             print(f"  [!] Analysis LLM 오류: {e}")
