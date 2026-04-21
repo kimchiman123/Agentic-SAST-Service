@@ -4,21 +4,29 @@ GPT 모델을 활용하여 Semgrep 결과 검증 및 비즈니스 로직 취약�
 향후 외부 도구(OSV, SerpAPI) 연동이 가능하도록 상태(StateGraph) 기반 워크플로우로 설계되었습니다.
 """
 import os
+import concurrent.futures
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode
 
 from core.isms_rag import ISMSKnowledgeBase
 from core.state import AnalysisState
 from core.tools.web_search import perform_web_search
+from core.mcp_tools import read_source, search_code
 
 
 # ──────────────────────────────────────────────
 #  1) Pydantic 모델 정의 (Structured Output)
 # ──────────────────────────────────────────────
+
+class DiscoveryModel(BaseModel):
+    is_vulnerable_candidate: bool = Field(default=False, description="취약점 가능성 여부 (조금이라도 의심되면 True, 확실히 안전하면 False)")
+    reason: str = Field(default="", description="원인 또는 해당 상태로 판정한 논리")
 
 class FindingModel(BaseModel):
     rule_id: Optional[str] = Field(default=None, description="semgrep 규칙 ID")
@@ -50,6 +58,7 @@ SYSTEM_PROMPT_SEMGREP_ANALYSIS = """당신은 클라우드 네이티브 환경�
 
 ## 역할
 Semgrep 정적 분석 도구가 탐지한 취약점 결과를 검증하고, 오탐(False Positive)을 필터링한 뒤 실제 위험이 존재하는 항목에 대해 데이터 흐름(Taint Analysis), 공격 시나리오, 그리고 안전한 수정 코드를 제시합니다.
+또한, 제공된 도구(read_source, search_code 등)를 활용하여 프로젝트 코드베이스를 심층적으로 탐색하고 전역 스코프나 연결된 로직을 적극적으로 추적하세요.
 
 ## 입력 데이터
 - Semgrep이 탐지한 취약점 정보 (규칙 ID, 심각도, 메시지)
@@ -57,7 +66,7 @@ Semgrep 정적 분석 도구가 탐지한 취약점 결과를 검증하고, 오�
 - 프로젝트 디렉토리 구조
 
 ## 분석 지침
-1. 제공된 코드 스니펫만을 근거로 판단하세요. 추측이나 가정을 하지 마세요.
+1. 제공된 스니펫만으로 부족할 경우 도구를 통해 더 많은 소스코드를 확인하세요. 추측이나 가정을 의존하지 마세요.
 2. 오탐(False Positive)인 경우, 'is_true_positive'를 false로 설정하고 'false_positive_reason'에 명확한 논거를 제시하세요.
 3. 실제 취약점(True Positive)인 경우, 데이터가 어디서 입력되어(Source) 어디서 취약점이 터지는지(Sink) 설명하는 'taint_analysis'를 작성하세요.
 4. 구체적인 공격 시나리오(PoC)와 수정 코드를 작성하세요.
@@ -95,9 +104,17 @@ class OpenAIAgent:
         if not api_key:
             raise ValueError("[!] OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
 
-        # Langchain ChatModel 인스턴스 (Pydantic 아웃풋 적용)
-        self.llm = ChatOpenAI(model=self.MODEL_NAME, api_key=api_key, temperature=0.1)
-        self.structured_llm = self.llm.with_structured_output(OutputModel)
+        # Discovery Agent (가볍고 빠른 필터링) - Stage 2
+        self.nano_llm = ChatOpenAI(model="gpt-5.4-nano", api_key=api_key, temperature=0.0)
+        self.discovery_llm = self.nano_llm.with_structured_output(DiscoveryModel)
+        
+        # Analysis Agent (심층 분석 및 Tool Calling) - Stage 3
+        self.mini_llm = ChatOpenAI(model="gpt-5.4-mini", api_key=api_key, temperature=0.1)
+        self.structured_llm = self.mini_llm.with_structured_output(OutputModel)
+        
+        # MCP 도구 목록 바인딩
+        self.tools = [read_source, search_code]
+        self.mini_llm_with_tools = self.mini_llm.bind_tools(self.tools)
         
         self.isms_kb = isms_kb
         self.osv_vulns = osv_vulns or []
@@ -108,15 +125,40 @@ class OpenAIAgent:
         workflow = StateGraph(AnalysisState)
         
         # 노드 선언
+        workflow.add_node("discovery_node", self._discovery_node)
         workflow.add_node("analyze_node", self._analyze_node)
+        workflow.add_node("mcp_tools", ToolNode(self.tools))
         workflow.add_node("search_node", self._search_node)
+        workflow.add_node("final_report_node", self._final_report_node)
         
         # 제어 흐름(Edge) 선언
-        workflow.add_edge(START, "analyze_node")
-        workflow.add_conditional_edges("analyze_node", self._should_search)
-        workflow.add_edge("search_node", "analyze_node")
+        workflow.add_edge(START, "discovery_node")
+        workflow.add_conditional_edges("discovery_node", self._should_analyze)
+        
+        # Tool Node 루프 조건
+        workflow.add_conditional_edges("analyze_node", self._should_continue_tools, {"tools": "mcp_tools", "final_report": "final_report_node"})
+        workflow.add_edge("mcp_tools", "analyze_node")
+        
+        # 리포트 노드 -> 서치 (있으면) -> 리턴
+        workflow.add_conditional_edges("final_report_node", self._should_search)
+        workflow.add_edge("search_node", "final_report_node")
         
         return workflow.compile()
+        
+    def _should_analyze(self, state: AnalysisState) -> str:
+        if state.get("is_vulnerable_candidate"):
+            return "analyze_node"
+        return END
+
+    def _should_continue_tools(self, state: AnalysisState) -> str:
+        messages = state.get("messages", [])
+        if not messages:
+            return "final_report"
+        last_message = messages[-1]
+        
+        if getattr(last_message, "tool_calls", None):
+            return "tools"
+        return "final_report"
 
     def _should_search(self, state: AnalysisState) -> str:
         """라우터 로직: 검색 필요 시 검색 노드로 회귀, 아니면 종료."""
@@ -124,125 +166,206 @@ class OpenAIAgent:
             return "search_node"
         return END
 
-    def _search_node(self, state: AnalysisState) -> AnalysisState:
+    def _search_node(self, state: AnalysisState) -> dict:
         """실제 웹 검색을 수행하고 결과를 상태(State)에 주입합니다."""
         query = state.get("search_query", "")
         print(f"  [🔍] Agent 능동형 웹 검색 실행 중 (query: '{query}')")
-        res = perform_web_search(query)
+        try:
+            res = perform_web_search(query)
+        except Exception as e:
+            print(f"  [!] 능동형 웹 검색 오류: {e}")
+            res = "검색 실패"
         
-        state["search_result"] = res
-        state["iteration"] = state.get("iteration", 0) + 1
-        state["needs_search"] = False
-        return state
+        return {
+            "search_result": res,
+            "iteration": state.get("iteration", 0) + 1,
+            "needs_search": False
+        }
 
-    def _analyze_node(self, state: AnalysisState) -> AnalysisState:
-        """단일 컨텍스트에 대해 LLM 분석을 수행하는 노드"""
+    def _discovery_node(self, state: AnalysisState) -> dict:
+        """Stage 2: Discovery Agent (nano 모델) 가벼운 사전 필터링"""
         ctx = state["context"]
         ctype = state["context_type"]
         
+        # 간단한 프롬프트로 의심 여부 판독
         if ctype == "semgrep":
-            system_prompt = SYSTEM_PROMPT_SEMGREP_ANALYSIS
-            user_prompt = self._build_semgrep_prompt(ctx)
-            file_path = ctx.get("file_path", "")
-            code_snippet = ctx.get("code_snippet", "")
+            prompt = f"Semgrep 탐지결과: {ctx.get('message', '')}\n파일: {ctx.get('file_path', '')}\n코드 스니펫:\n{ctx.get('code_snippet', '')}"
         else:
-            system_prompt = SYSTEM_PROMPT_DEEP_ANALYSIS
-            file_path = ctx.get("file_path", "")
-            code_snippet = ctx.get("content", "")
-            user_prompt = (
-                f"## 분석 대상 파일\n파일 경로: {file_path}\n\n"
-                f"## 소스코드\n```\n{code_snippet}\n```\n\n"
-                f"위 코드에서 비즈니스 로직 결함을 분석하고, ISMS-P 규약 위반 여부도 함께 평가해주세요."
-            )
+            prompt = f"심층 분석 핵심파일:\n{ctx.get('content', '')[:1000]}..."
+            
+        sys_prompt = "너는 보안 분석 예비 검토자다. 전달받은 코드에서 취약점이나 논리적 오류 가능성이 1%라도 보이면 is_vulnerable_candidate를 true로 반환하라. 확실하게 100% 안전한 고정 문자열 반환 등의 코드만 false로 지정하라. 오탐을 적극적으로 허용한다."
+        
+        try:
+            res: DiscoveryModel = self.discovery_llm.invoke([
+                SystemMessage(content=sys_prompt),
+                HumanMessage(content=prompt)
+            ])
+            if not res.is_vulnerable_candidate:
+                print(f"  [Skip] 단계 2: 의심 없음으로 스킵됨 (이유: {res.reason})")
+            return {"is_vulnerable_candidate": res.is_vulnerable_candidate}
+        except Exception as e:
+            # 예외 발생 시 안전을 고려하여 무조건 분석 단계를 통과
+            return {"is_vulnerable_candidate": True}
 
+    def _analyze_node(self, state: AnalysisState) -> dict:
+        """Stage 3: Analysis Agent (mini 모델 + MCP Tools) 딥다이브"""
+        ctx = state["context"]
+        ctype = state["context_type"]
+        messages = state.get("messages", [])
+        
+        new_messages = []
+        if not messages:
+            # 최초 메시지 구성
+            if ctype == "semgrep":
+                system_prompt = SYSTEM_PROMPT_SEMGREP_ANALYSIS
+                user_prompt = self._build_semgrep_prompt(ctx)
+            else:
+                system_prompt = SYSTEM_PROMPT_DEEP_ANALYSIS
+                file_path = ctx.get("file_path", "")
+                code_snippet = ctx.get("content", "")
+                user_prompt = (
+                    f"## 분석 대상 파일\n파일 경로: {file_path}\n"
+                    f"위 코드를 주시하여 프로젝트의 비즈니스 로직 결함을 분석하세요. 제공된 코드로 불충분할 경우 도구를 호출하세요."
+                )
+            
+            new_messages.append(SystemMessage(content=system_prompt))
+            new_messages.append(HumanMessage(content=user_prompt))
+
+        # LLM(Tool 바인딩됨) 실행 (React 에이전트 루프 수행)
+        try:
+            invoke_messages = messages + new_messages
+            response = self.mini_llm_with_tools.invoke(invoke_messages)
+            new_messages.append(response)
+        except Exception as e:
+            print(f"  [!] Analysis LLM 오류: {e}")
+            
+        return {"messages": new_messages}
+
+    def _final_report_node(self, state: AnalysisState) -> dict:
+        """분석(Tool Calling) 완료 후 최종 리포트를 Pydantic으로 산출"""
+        messages = state.get("messages", [])
+        
+        # 이전 툴 호출과 분석 결과가 모두 담긴 컨텍스트를 기반으로 정리
+        final_prompt = (
+            "지금까지의 탐색 과정과 결과를 종합하여, 최종 취약점 보고서를 작성해주세요.\n"
+            "**[중요] 응답은 오직 순수한 JSON 포맷으로만 반환해야 하며, 어떤 경우에도 "
+            "마크다운 백틱(```json)이나 텍스트 설명 등 부가적인 문자열을 포함해서는 안 됩니다!**\n"
+        )
+        
+        # 외부 컨텍스트 주입 (RAG)
         extra_context = ""
-
         # 웹 검색 결과가 존재한다면 주입 (2번째 사이클)
         search_res = state.get("search_result", "")
         if search_res:
-            extra_context += f"## [중요] 이전 판단에 따른 최신 웹 검색 결과 참조데이터\n해당 웹 검색 내역을 적극 수용하여 최종 포착(PoC)된 내역인지 다시 평가하세요:\n{search_res}\n\n"
+            extra_context += f"## 최신 웹 검색 결과 데이터:\n{search_res}\n\n"
         
-        # OSV SCA 컨텍스트 주입
+        # OSV 컨텍스트 추가
         if self.osv_vulns:
-            extra_context += "## 알려진 외부 라이브러리 취약점 (SCA 결과)\n"
+            extra_context += "## SCA 외부 라이브러리 취약점 내역\n"
             for v in self.osv_vulns:
-                extra_context += f"- 패키지: {v['package']} v{v['version']} | {v['cve_id']}: {v['summary']}\n"
-            extra_context += "위 라이브러리 취약점을 참고하여, 비즈니스 로직과 결합되어 실제로 보안 위협이 되는지 평가하세요.\n\n"
-
-        # ISMS-P RAG 적용
+                extra_context += f"- 패키지: {v['package']} v{v['version']} | {v['cve_id']}\n"
+        
+        # ISMS-P 추가
         if self.isms_kb:
-            isms_ref = self.isms_kb.search_for_code_context(code_snippet[:500], file_path)
+            # 상태에 저장된 원문 코드 혹은 컨텍스트 기반 스니펫
+            ctx = state.get("context", {})
+            file_path = ctx.get("file_path", "")
+            code_snippet = ctx.get("code_snippet", ctx.get("content", ""))[:500]
+            isms_ref = self.isms_kb.search_for_code_context(code_snippet, file_path)
             if isms_ref:
-                extra_context += f"{isms_ref}\n\n"
+                extra_context += f"## 관련 ISMS-P 지침\n{isms_ref}\n"
 
         if extra_context:
-            user_prompt += f"\n\n{extra_context}"
-
-        # LLM 파이프라인 호출
-        prompt_tmpl = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("user", "{user_input}")
-        ])
-        chain = prompt_tmpl | self.structured_llm
-
+            final_prompt += "\n" + extra_context
+            
+        invoke_messages = messages + [HumanMessage(content=final_prompt)]
+        
         try:
-            result: OutputModel = chain.invoke({"user_input": user_prompt})
+            result: OutputModel = self.structured_llm.invoke(invoke_messages)
             
             parsed_findings = []
             for f in result.findings:
                 f_dict = f.model_dump(exclude_none=True)
-                f_dict["source"] = "semgrep_verified" if ctype == "semgrep" else "deep_analysis"
-                if ctype == "semgrep":
-                    f_dict["original_file"] = file_path
+                f_dict["source"] = "semgrep_verified" if state["context_type"] == "semgrep" else "deep_analysis"
+                if state["context_type"] == "semgrep":
+                    f_dict["original_file"] = state["context"].get("file_path", "")
                 parsed_findings.append(f_dict)
                 
-            state["findings"] = parsed_findings
-            state["needs_search"] = result.needs_external_search
-            state["search_query"] = result.search_query or ""
+            return {
+                "findings": parsed_findings,
+                "needs_search": result.needs_external_search,
+                "search_query": result.search_query or ""
+            }
             
         except Exception as e:
-            print(f"[!] LangChain LLM 추론 실패 ({file_path}): {e}")
-            state["findings"] = []
-
-        return state
+            print(f"[!] 최종 리포트 작성 실패: {e}")
+            return {
+                "findings": [],
+                "needs_search": False,
+                "search_query": ""
+            }
 
     def analyze_semgrep_findings(self, contexts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         all_findings = []
-        for i, ctx in enumerate(contexts):
-            print(f"  [→] Semgrep 결과 검증 중... ({i + 1}/{len(contexts)}) {ctx.get('file_path', '')}")
+        
+        def _process(ctx, idx):
+            print(f"  [→] Semgrep 결과 검증 중... ({idx + 1}/{len(contexts)}) {ctx.get('file_path', '')}")
             initial_state: AnalysisState = {
                 "context": ctx,
                 "context_type": "semgrep",
+                "is_vulnerable_candidate": False,
                 "findings": [],
                 "needs_search": False,
                 "search_query": "",
                 "search_result": "",
-                "iteration": 0
+                "iteration": 0,
+                "messages": []
             }
             result_state = self.graph.invoke(initial_state)
-            all_findings.extend(result_state.get("findings", []))
+            return result_state.get("findings", [])
+            
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(_process, ctx, i) for i, ctx in enumerate(contexts)]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    all_findings.extend(future.result())
+                except Exception as e:
+                    print(f"  [!] Semgrep 검증 스레드 오류: {e}")
+                    
         return all_findings
 
     def analyze_critical_logic(self, critical_files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         all_findings = []
-        for i, ctx in enumerate(critical_files):
+        
+        def _process(ctx, idx):
             content = ctx.get("content", "")
             if len(content) > 15000:
                 print(f"  [→] 대용량 파일 스킵 (추후 분할 처리 구현 예정): {ctx.get('file_path', '')}")
-                continue
+                return []
                 
-            print(f"  [→] 핵심 로직 심층 분석 중... ({i + 1}/{len(critical_files)}) {ctx.get('file_path', '')}")
+            print(f"  [→] 핵심 로직 심층 분석 중... ({idx + 1}/{len(critical_files)}) {ctx.get('file_path', '')}")
             initial_state: AnalysisState = {
                 "context": ctx,
                 "context_type": "deep_analysis",
+                "is_vulnerable_candidate": False,
                 "findings": [],
                 "needs_search": False,
                 "search_query": "",
                 "search_result": "",
-                "iteration": 0
+                "iteration": 0,
+                "messages": []
             }
             result_state = self.graph.invoke(initial_state)
-            all_findings.extend(result_state.get("findings", []))
+            return result_state.get("findings", [])
+            
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(_process, ctx, i) for i, ctx in enumerate(critical_files)]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    all_findings.extend(future.result())
+                except Exception as e:
+                    print(f"  [!] 심층 분석 스레드 오류: {e}")
+                    
         return all_findings
 
     @staticmethod

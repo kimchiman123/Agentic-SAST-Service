@@ -3,7 +3,7 @@
 에이전트가 알려지지 않은 새로운 취약점이나 OSV 정보가 부족한 CVE의
 최신 PoC (Proof of Concept) 등을 수집할 때 사용합니다.
 """
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from typing import List
 
 def perform_web_search(query: str, max_results: int = 3) -> str:

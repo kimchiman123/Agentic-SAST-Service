@@ -15,24 +15,12 @@ echo.
 :: 1. 타겟 경로 확인 (드래그 앤 드롭 지원)
 set "TARGET_DIR=%~1"
 
+:INPUT_LOOP
 if "%TARGET_DIR%"=="" (
     echo [!] 오류: 분석할 폴더가 지정되지 않았습니다.
-    echo [💡] 팁: 분석할 폴더를 이 bat 파일 위로 끌어다 놓으세요.
-    echo.
-    echo 테스트용 vuln-test-app 폴더를 분석할까요? (Y/N)
-    set /p "USER_CHOICE=선택: "
-) else (
-    goto :RUN_SCAN
-)
-
-:: 대문자로 변환하여 비교
-if /I "%USER_CHOICE%"=="Y" (
-    set "TARGET_DIR=%GUARDIAN_DIR%vuln-test-app"
-    goto :RUN_SCAN
-) else (
-    echo 분석을 취소했습니다.
-    pause
-    exit /b 0
+    echo [💡] 팁: 분석할 폴더의 경로를 직접 입력하거나 콘솔창 위로 폴더를 드래그 앤 드롭 하세요.
+    set /p "TARGET_DIR=폴더 경로 입력: "
+    goto :INPUT_LOOP
 )
 
 :RUN_SCAN
