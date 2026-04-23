@@ -8,165 +8,188 @@ import markdown
 from typing import Optional
 
 
-# 전문 보안 리포트용 CSS 스타일
 REPORT_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap');
+
+:root {
+    --primary: #4f46e5;
+    --primary-bg: #f5f3ff;
+    --critical: #e11d48;
+    --high: #ea580c;
+    --medium: #d97706;
+    --low: #059669;
+    --info: #2563eb;
+    --bg-main: #f8fafc;
+    --surface: #ffffff;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+}
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-    font-size: 13px;
-    line-height: 1.7;
-    color: #222222;
-    background: #ffffff;
-    padding: 40px 50px;
-    max-width: 900px;
+    font-family: 'Inter', 'Noto Sans KR', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-main);
+    background: var(--bg-main);
+    padding: 60px 80px;
+    max-width: 1000px;
     margin: 0 auto;
 }
 
+/* Typography */
 h1 {
-    font-size: 24px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 42px;
     font-weight: 700;
-    color: #000000;
-    border-bottom: 3px solid #000000;
-    padding-bottom: 12px;
-    margin-bottom: 20px;
+    color: var(--primary);
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
 }
 
 h2 {
-    font-size: 18px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 24px;
     font-weight: 700;
-    color: #111111;
-    margin-top: 30px;
-    margin-bottom: 12px;
-    padding: 8px 12px;
-    background: #f4f4f4;
-    border-left: 4px solid #333333;
-    border-radius: 0 4px 4px 0;
+    margin-top: 48px;
+    margin-bottom: 24px;
+    color: #0f172a;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 8px;
 }
 
 h3 {
-    font-size: 15px;
+    font-size: 18px;
     font-weight: 600;
-    color: #000000;
-    margin-top: 20px;
-    margin-bottom: 8px;
+    margin-top: 32px;
+    margin-bottom: 12px;
+    color: #1e293b;
 }
 
-p { margin: 6px 0; }
-strong { font-weight: 600; }
+p { margin-bottom: 12px; }
+.report-meta { color: var(--text-muted); font-size: 14px; margin-bottom: 40px; }
 
-ul, ol {
-    margin: 6px 0 6px 20px;
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 12px 0;
-    font-size: 12.5px;
-}
-
-th {
-    background: #000000;
-    color: #ffffff;
-    font-weight: 600;
-    padding: 10px 12px;
-    text-align: left;
-    border: 1px solid #000000;
-}
-
-td {
-    padding: 8px 12px;
-    border: 1px solid #cccccc;
-}
-
-tr:nth-child(even) td {
-    background: #fafafa;
-}
-
-blockquote {
-    border-left: 3px solid #666666;
-    background: #f9f9f9;
-    padding: 10px 16px;
-    margin: 8px 0;
-    font-size: 12.5px;
-    color: #555555;
-    border-radius: 0 4px 4px 0;
-}
-
-code {
-    background: #eeeeee;
-    padding: 2px 5px;
-    border-radius: 3px;
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 12px;
-    color: #000000;
-    font-weight: 500;
-}
-
-pre {
-    background: #111111;
-    color: #f1f1f1;
-    padding: 14px 16px;
-    border-radius: 6px;
-    overflow-x: auto;
-    margin: 8px 0;
-    font-size: 11.5px;
-    line-height: 1.5;
-}
-
-pre code {
-    background: transparent;
-    color: inherit;
-    padding: 0;
-    font-weight: normal;
-}
-
-hr {
-    border: none;
-    border-top: 1px solid #cccccc;
-    margin: 24px 0;
-}
-
-em {
-    color: #666666;
-    font-size: 12px;
-}
-
-/* 심각도 색상 - 흑백 톤 유지 */
-.severity-critical { color: #000000; font-weight: 800; text-decoration: underline; }
-.severity-high { color: #333333; font-weight: 700; }
-.severity-medium { color: #555555; font-weight: 600; }
-.severity-low { color: #777777; }
-
-/* 페이지 헤더 */
-.report-header {
-    text-align: center;
-    padding: 20px 0 30px 0;
-    border-bottom: 2px solid #000000;
+/* Dashboard & Cards */
+.dashboard {
+    display: flex;
+    gap: 20px;
     margin-bottom: 30px;
 }
 
-.report-header h1 {
-    border-bottom: none;
-    padding-bottom: 0;
-    font-size: 26px;
+.score-card {
+    flex: 1.5;
+    background: var(--surface);
+    padding: 24px;
+    border-radius: 16px;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    border: 1px solid var(--border);
+    text-align: center;
 }
 
-/* 인쇄 최적화 */
+.score-label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+.score-value { font-size: 64px; font-weight: 800; line-height: 1; margin: 12px 0; font-family: 'Outfit', sans-serif; }
+.score-bar-bg { background: #f1f5f9; height: 10px; border-radius: 5px; overflow: hidden; }
+.score-bar-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; }
+
+.stats-grid { flex: 2; display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.stat-card {
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    transition: transform 0.2s;
+}
+.stat-card:hover { transform: translateY(-2px); }
+.stat-label { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.stat-count { font-size: 28px; font-weight: 700; margin-top: 4px; }
+
+.stat-card.critical { border-left: 4px solid var(--critical); color: var(--critical); }
+.stat-card.high { border-left: 4px solid var(--high); color: var(--high); }
+.stat-card.medium { border-left: 4px solid var(--medium); color: var(--medium); }
+.stat-card.info { border-left: 4px solid var(--info); color: var(--info); }
+
+/* Table Style */
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 20px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
+th {
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: #fff;
+    vertical-align: middle;
+}
+
+tr:last-child td { border-bottom: none; }
+
+/* Code blocks */
+blockquote {
+    border-left: 4px solid var(--primary);
+    background: #f1f5f9;
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-radius: 0 8px 8px 0;
+    color: #334155;
+    font-style: italic;
+}
+
+pre {
+    background: #1e293b;
+    color: #f8fafc;
+    padding: 20px;
+    border-radius: 12px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 13px;
+    box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.06);
+}
+
+code {
+    background: #f1f5f9;
+    color: var(--primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+    font-family: monospace;
+}
+
+pre code { background: transparent; color: inherit; padding: 0; }
+
+/* Responsive & Print */
+.page-break { page-break-after: always; }
+
 @media print {
-    body { padding: 20px 30px; }
-    h2 { page-break-after: avoid; }
-    h3 { page-break-after: avoid; }
-    pre { page-break-inside: avoid; }
-    table { page-break-inside: avoid; }
+    body { background: #fff; padding: 0; }
+    .stat-card { border: 1px solid #ddd; page-break-inside: avoid; }
+    h2, h3 { page-break-after: avoid; }
+    pre, table { page-break-inside: avoid; }
 }
 
 @page {
     size: A4;
-    margin: 15mm 20mm;
+    margin: 20mm;
 }
 """
 
@@ -178,18 +201,23 @@ def markdown_to_html(md_content: str) -> str:
         extensions=["tables", "fenced_code", "nl2br"],
     )
 
-    html_doc = f"""<!DOCTYPE html>
+    # f-string 대신 .replace()를 사용하여 CSS 내부의 중괄호 충돌을 방지합니다.
+    html_doc = """<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agentic-SAST-Guardian 보안 분석 리포트</title>
-    <style>{REPORT_CSS}</style>
+    <style>REPORT_CSS_PLACEHOLDER</style>
 </head>
 <body>
-{html_body}
+HTML_BODY_PLACEHOLDER
 </body>
 </html>"""
+    
+    html_doc = html_doc.replace("REPORT_CSS_PLACEHOLDER", REPORT_CSS)
+    html_doc = html_doc.replace("HTML_BODY_PLACEHOLDER", html_body)
+    
     return html_doc
 
 

@@ -221,8 +221,11 @@ class OpenAIAgent:
                 system_prompt = SYSTEM_PROMPT_DEEP_ANALYSIS
                 file_path = ctx.get("file_path", "")
                 code_snippet = ctx.get("content", "")
+                
+                # FIX 1: LLM이 실제로 코드를 보고 분석할 수 있도록 컨텍스트를 프롬프트에 주입
                 user_prompt = (
-                    f"## 분석 대상 파일\n파일 경로: {file_path}\n"
+                    f"## 분석 대상 파일\n파일 경로: {file_path}\n\n"
+                    f"## 제공된 코드 컨텍스트\n```\n{code_snippet}\n```\n\n"
                     f"위 코드를 주시하여 프로젝트의 비즈니스 로직 결함을 분석하세요. 제공된 코드로 불충분할 경우 도구를 호출하세요."
                 )
             
@@ -265,11 +268,19 @@ class OpenAIAgent:
         
         # ISMS-P 추가
         if self.isms_kb:
-            # 상태에 저장된 원문 코드 혹은 컨텍스트 기반 스니펫
-            ctx = state.get("context", {})
-            file_path = ctx.get("file_path", "")
-            code_snippet = ctx.get("code_snippet", ctx.get("content", ""))[:500]
-            isms_ref = self.isms_kb.search_for_code_context(code_snippet, file_path)
+            # FIX 3: RAG 검색 정확도 향상. 
+            # 단순히 코드 앞부분(500자)을 주는 대신, 직전에 Agent가 생각한 내용(CoT)을 기반으로 규정을 검색합니다.
+            query_text = ""
+            if messages and hasattr(messages[-1], "content") and messages[-1].content:
+                query_text = messages[-1].content[:1500]  # CoT 추론 과정에서 핵심 키워드 검색
+            
+            if not query_text:
+                ctx = state.get("context", {})
+                query_text = ctx.get("code_snippet", ctx.get("content", ""))[:500]
+                
+            file_path = state.get("context", {}).get("file_path", "")
+            isms_ref = self.isms_kb.search_for_code_context(query_text, file_path)
+            
             if isms_ref:
                 extra_context += f"## 관련 ISMS-P 지침\n{isms_ref}\n"
 
@@ -307,6 +318,7 @@ class OpenAIAgent:
         all_findings = []
         
         def _process(ctx, idx):
+            import time
             print(f"  [→] Semgrep 결과 검증 중... ({idx + 1}/{len(contexts)}) {ctx.get('file_path', '')}")
             initial_state: AnalysisState = {
                 "context": ctx,
@@ -319,8 +331,21 @@ class OpenAIAgent:
                 "iteration": 0,
                 "messages": []
             }
-            result_state = self.graph.invoke(initial_state)
-            return result_state.get("findings", [])
+            # FIX 2: Rate Limit(429) 대비 Exponential Backoff 재시도 로직
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    result_state = self.graph.invoke(initial_state)
+                    return result_state.get("findings", [])
+                except Exception as e:
+                    if "429" in str(e) or "RateLimit" in str(e):
+                        wait_time = 2 ** attempt
+                        print(f"  [!] Rate Limit 발생. {wait_time}초 후 재시도... ({attempt + 1}/{max_retries})")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"  [!] Semgrep 검증 스레드 예외 발생: {e}")
+                        break
+            return []
             
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(_process, ctx, i) for i, ctx in enumerate(contexts)]
@@ -380,8 +405,23 @@ class OpenAIAgent:
                 "iteration": 0,
                 "messages": []
             }
-            result_state = self.graph.invoke(initial_state)
-            return result_state.get("findings", [])
+            
+            # FIX 2: Rate Limit(429) 대비 Exponential Backoff 재시도 로직
+            import time
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    result_state = self.graph.invoke(initial_state)
+                    return result_state.get("findings", [])
+                except Exception as e:
+                    if "429" in str(e) or "RateLimit" in str(e):
+                        wait_time = 2 ** attempt
+                        print(f"  [!] Rate Limit 발생. {wait_time}초 후 심층분석 재시도... ({attempt + 1}/{max_retries})")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"  [!] 심층 분석 스레드 예외 발생: {e}")
+                        break
+            return []
             
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(_process, ctx, i) for i, ctx in enumerate(critical_files)]

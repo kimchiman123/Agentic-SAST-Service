@@ -24,8 +24,19 @@ def read_source(file_path: str, start_line: int, end_line: int) -> str:
         if start > end:
             return "[Error] start_line이 end_line보다 큽니다."
             
+        MAX_LINES = 300
+        if end - start + 1 > MAX_LINES:
+            end = start + MAX_LINES - 1
+            exceeded = True
+        else:
+            exceeded = False
+            
         snippet = lines[start - 1 : end]
         numbered_snippet = [f"{start + i}: {line}" for i, line in enumerate(snippet)]
+        
+        if exceeded:
+            numbered_snippet.append(f"\n[System Caution] 한 번에 최대 {MAX_LINES}라인까지만 읽을 수 있도록 제한되었습니다. 추가 코드가 필요하다면 나누어서 호출하세요.")
+            
         return "".join(numbered_snippet)
     except Exception as e:
         return f"[Error] 소스 코드 읽기 실패: {str(e)}"

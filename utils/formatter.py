@@ -38,24 +38,66 @@ def _clean_code_block(code_str: Any) -> str:
     return code_str.strip()
 
 
-def _build_summary_table(findings: List[Dict[str, Any]]) -> str:
-    """취약점 요약 테이블을 생성합니다."""
-    severity_count: Dict[str, int] = {}
+def _calculate_score(findings: List[Dict[str, Any]]) -> int:
+    """보안 점수를 계산합니다 (0-100)."""
+    if not findings:
+        return 100
+    
+    deduction = 0
     for f in findings:
-        sev = f.get("severity", "INFO")
-        severity_count[sev] = severity_count.get(sev, 0) + 1
+        # False Positive는 점수 차감 제외
+        if f.get("source") == "semgrep_verified" and not f.get("is_true_positive", True):
+            continue
+            
+        sev = f.get("severity", "INFO").upper()
+        if sev == "CRITICAL": deduction += 25
+        elif sev == "HIGH": deduction += 15
+        elif sev == "MEDIUM": deduction += 5
+        elif sev == "LOW": deduction += 1
+        
+    return max(0, 100 - deduction)
 
-    lines = [
-        "| 심각도 | 개수 |",
-        "|--------|------|",
-    ]
-    for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]:
-        count = severity_count.get(sev, 0)
-        if count > 0:
-            lines.append(f"| {sev} | {count} |")
+def _build_executive_summary(findings: List[Dict[str, Any]]) -> str:
+    """핵심 요약 대시보드(HTML 그리드)를 생성합니다."""
+    score = _calculate_score(findings)
+    severity_count = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
+    
+    tp_findings = [f for f in findings if f.get("is_true_positive", True)]
+    for f in tp_findings:
+        sev = f.get("severity", "INFO").upper()
+        if sev in severity_count:
+            severity_count[sev] += 1
 
-    lines.append(f"| **합계** | **{len(findings)}** |")
-    return "\n".join(lines)
+    score_color = "#059669" if score >= 80 else "#d97706" if score >= 50 else "#e11d48"
+    
+    html = f"""
+<div class="dashboard">
+    <div class="score-card">
+        <div class="score-label">SECURITY SCORE</div>
+        <div class="score-value" style="color: {score_color}">{score}</div>
+        <div class="score-bar-bg"><div class="score-bar-fill" style="width: {score}%; background: {score_color}"></div></div>
+    </div>
+    <div class="stats-grid">
+        <div class="stat-card critical">
+            <div class="stat-label">CRITICAL</div>
+            <div class="stat-count">{severity_count['CRITICAL']}</div>
+        </div>
+        <div class="stat-card high">
+            <div class="stat-label">HIGH</div>
+            <div class="stat-count">{severity_count['HIGH']}</div>
+        </div>
+        <div class="stat-card medium">
+            <div class="stat-label">MEDIUM</div>
+            <div class="stat-count">{severity_count['MEDIUM']}</div>
+        </div>
+        <div class="stat-card info">
+            <div class="stat-label">INFO/LOW</div>
+            <div class="stat-count">{severity_count['INFO'] + severity_count['LOW']}</div>
+        </div>
+    </div>
+</div>
+"""
+    return html
 
 
 def _render_semgrep_finding(idx: int, finding: Dict[str, Any]) -> str:
@@ -225,18 +267,14 @@ def format_report(all_findings: List[Dict[str, Any]]) -> str:
     deep_findings = _sort_by_severity(deep_findings)
 
     report_lines = [
-        "# Source Code Security Analysis Report",
+        "<div class='report-cover'>",
+        "# Security Analysis Report",
+        f"<p class='report-meta'>Generated on {now} by <strong>Agentic-SAST-Guardian</strong></p>",
+        "</div>",
         "",
-        f"**분석 일시:** {now}",
-        f"**분석 도구:** SAST Automated Inspector",
+        "## 1. Executive Summary",
         "",
-        "---",
-        "",
-        "## 1. 총평",
-        "",
-        "### 1.1 분석 통계 데이터",
-        "",
-        _build_summary_table(all_findings),
+        _build_executive_summary(all_findings),
         "",
     ]
 
@@ -262,10 +300,10 @@ def format_report(all_findings: List[Dict[str, Any]]) -> str:
             report_lines.append(f"| {i} | {short_violation} | {title} | {sev} |")
         report_lines.append("")
 
+    report_lines.append("<div class='page-break'></div>")
     report_lines.extend([
-        "---",
         "",
-        "## 2. 주요 분석 내용",
+        "## 2. Detailed Findings",
         "",
     ])
 
