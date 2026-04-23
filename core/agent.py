@@ -4,6 +4,8 @@ GPT 모델을 활용하여 Semgrep 결과 검증 및 비즈니스 로직 취약�
 향후 외부 도구(OSV, SerpAPI) 연동이 가능하도록 상태(StateGraph) 기반 워크플로우로 설계되었습니다.
 """
 import os
+import re
+import json
 import concurrent.futures
 from typing import Any, Dict, List, Optional
 
@@ -246,11 +248,11 @@ class OpenAIAgent:
         """분석(Tool Calling) 완료 후 최종 리포트를 Pydantic으로 산출"""
         messages = state.get("messages", [])
         
-        # 이전 툴 호출과 분석 결과가 모두 담긴 컨텍스트를 기반으로 정리
+        # 분석 도구 루프 이후 마지막 정리 요청
         final_prompt = (
             "지금까지의 탐색 과정과 결과를 종합하여, 최종 취약점 보고서를 작성해주세요.\n"
-            "**[중요] 응답은 오직 순수한 JSON 포맷으로만 반환해야 하며, 어떤 경우에도 "
-            "마크다운 백틱(```json)이나 텍스트 설명 등 부가적인 문자열을 포함해서는 안 됩니다!**\n"
+            "취약점이 발견되었다면 findings 리스트에 상세히 담으세요.\n"
+            "**반드시 JSON 형식으로만 응답해야 합니다.**\n"
         )
         
         # 외부 컨텍스트 주입 (RAG)
@@ -290,11 +292,27 @@ class OpenAIAgent:
         invoke_messages = messages + [HumanMessage(content=final_prompt)]
         
         try:
-            result: OutputModel = self.structured_llm.invoke(invoke_messages)
+            # 1단계: structured_output 시도
+            try:
+                result: OutputModel = self.structured_llm.invoke(invoke_messages)
+            except Exception:
+                # 2단계: 실패 시 일반 텍스트 호출 후 수동 파싱 (Robust Parsing)
+                raw_response = self.mini_llm.invoke(invoke_messages)
+                content = raw_response.content
+                # JSON 블록만 추출 (백틱 제거 및 슬롭 방지)
+                json_match = re.search(r"({.*})", content, re.DOTALL)
+                if json_match:
+                    content = json_match.group(1)
+                else:
+                    # 앞뒤 공백 및 마크다운 표시 제거
+                    content = content.strip().replace("```json", "").replace("```", "").strip()
+                
+                result = OutputModel.model_validate_json(content)
             
             parsed_findings = []
             for f in result.findings:
                 f_dict = f.model_dump(exclude_none=True)
+                # 소스 정보 강제 주입
                 f_dict["source"] = "semgrep_verified" if state["context_type"] == "semgrep" else "deep_analysis"
                 if state["context_type"] == "semgrep":
                     f_dict["original_file"] = state["context"].get("file_path", "")
@@ -307,7 +325,7 @@ class OpenAIAgent:
             }
             
         except Exception as e:
-            print(f"[!] 최종 리포트 작성 실패: {e}")
+            print(f"  [!] 최종 리포트 작성/파싱 실패: {e}")
             return {
                 "findings": [],
                 "needs_search": False,
@@ -360,7 +378,6 @@ class OpenAIAgent:
     def analyze_critical_logic(self, critical_files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         all_findings = []
         
-        import re
         def _process(ctx, idx):
             content = ctx.get("content", "")
             
