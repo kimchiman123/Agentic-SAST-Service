@@ -18,7 +18,7 @@ body {
     font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
     font-size: 13px;
     line-height: 1.7;
-    color: #1a1a2e;
+    color: #222222;
     background: #ffffff;
     padding: 40px 50px;
     max-width: 900px;
@@ -28,8 +28,8 @@ body {
 h1 {
     font-size: 24px;
     font-weight: 700;
-    color: #0f3460;
-    border-bottom: 3px solid #0f3460;
+    color: #000000;
+    border-bottom: 3px solid #000000;
     padding-bottom: 12px;
     margin-bottom: 20px;
 }
@@ -37,19 +37,19 @@ h1 {
 h2 {
     font-size: 18px;
     font-weight: 700;
-    color: #16213e;
+    color: #111111;
     margin-top: 30px;
     margin-bottom: 12px;
     padding: 8px 12px;
-    background: #e8edf5;
-    border-left: 4px solid #0f3460;
+    background: #f4f4f4;
+    border-left: 4px solid #333333;
     border-radius: 0 4px 4px 0;
 }
 
 h3 {
     font-size: 15px;
     font-weight: 600;
-    color: #1a1a2e;
+    color: #000000;
     margin-top: 20px;
     margin-bottom: 8px;
 }
@@ -69,45 +69,46 @@ table {
 }
 
 th {
-    background: #0f3460;
+    background: #000000;
     color: #ffffff;
     font-weight: 600;
     padding: 10px 12px;
     text-align: left;
-    border: 1px solid #0f3460;
+    border: 1px solid #000000;
 }
 
 td {
     padding: 8px 12px;
-    border: 1px solid #d1d5db;
+    border: 1px solid #cccccc;
 }
 
 tr:nth-child(even) td {
-    background: #f8f9fb;
+    background: #fafafa;
 }
 
 blockquote {
-    border-left: 3px solid #e94560;
-    background: #fff5f5;
+    border-left: 3px solid #666666;
+    background: #f9f9f9;
     padding: 10px 16px;
     margin: 8px 0;
     font-size: 12.5px;
-    color: #4a4a4a;
+    color: #555555;
     border-radius: 0 4px 4px 0;
 }
 
 code {
-    background: #f1f3f5;
+    background: #eeeeee;
     padding: 2px 5px;
     border-radius: 3px;
     font-family: 'Consolas', 'Courier New', monospace;
     font-size: 12px;
-    color: #c7254e;
+    color: #000000;
+    font-weight: 500;
 }
 
 pre {
-    background: #1e1e2e;
-    color: #cdd6f4;
+    background: #111111;
+    color: #f1f1f1;
     padding: 14px 16px;
     border-radius: 6px;
     overflow-x: auto;
@@ -120,30 +121,31 @@ pre code {
     background: transparent;
     color: inherit;
     padding: 0;
+    font-weight: normal;
 }
 
 hr {
     border: none;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid #cccccc;
     margin: 24px 0;
 }
 
 em {
-    color: #6b7280;
+    color: #666666;
     font-size: 12px;
 }
 
-/* 심각도 색상 */
-.severity-critical { color: #dc2626; font-weight: 700; }
-.severity-high { color: #ea580c; font-weight: 700; }
-.severity-medium { color: #ca8a04; font-weight: 600; }
-.severity-low { color: #16a34a; }
+/* 심각도 색상 - 흑백 톤 유지 */
+.severity-critical { color: #000000; font-weight: 800; text-decoration: underline; }
+.severity-high { color: #333333; font-weight: 700; }
+.severity-medium { color: #555555; font-weight: 600; }
+.severity-low { color: #777777; }
 
 /* 페이지 헤더 */
 .report-header {
     text-align: center;
     padding: 20px 0 30px 0;
-    border-bottom: 2px solid #0f3460;
+    border-bottom: 2px solid #000000;
     margin-bottom: 30px;
 }
 

@@ -1,0 +1,33 @@
+﻿심각도,취약점 제목,발생지(파일),ISMS-P 위반사항,취약점 유형코드
+WARNING,HTTP 메서드 미지정 RequestMapping 경고(로그인 폼 조회용),book/src/main/java/com/aivle0102/book/controller/UserController.java,해당 없음(취약점 미성립),CSRF
+ERROR,Dockerfile 런타임 스테이지에서 비root 사용자 미지정으로 인한 컨테이너 root 실행 위험,Dockerfile,최소권한 원칙 위반,Privilege Escalation / Container Escape Risk
+WARNING,Kubernetes 컨테이너의 권한 상승 방지 설정 누락,cluster-autoscaler-autodiscover.yaml,보호대책 요구사항: 컨테이너 권한 상승 방지 및 최소권한 원칙 미준수. 운영 시스템에 대한 안전한 보안 설정 미적용으로 볼 수 있어 ISMS-P의 기술적 보호대책 관점에서 미흡합니다.,Privilege Escalation
+ERROR,클라이언트 코드에 하드코딩된 JWT 토큰 문자열이 포함됨,book/frontend/src/app/userpage/view/page.js,"ISMS-P 개인정보의 안전성 확보조치 미흡 가능성, 비밀정보 관리 및 접근통제 미흡",Hardcoded Secret
+ERROR,Dockerfile에서 비루트 사용자(USER) 미지정으로 컨테이너가 root 권한으로 실행될 수 있음,book/Dockerfile,"최소권한 원칙 위반, 계정 및 권한 관리 미흡",Privilege Misconfiguration
+INFO,Kubernetes 컨테이너에 비루트 실행 설정이 누락됨,k8s-deployment.yaml,ISMS-P에서 요구하는 접근통제 및 최소권한 원칙 위반 가능성이 있습니다. 컨테이너를 루트로 실행하면 불필요한 높은 권한이 부여되어 권한 분리 및 시스템 접근 통제 요구사항에 부합하지 않을 수 있습니다.,Privilege Escalation
+WARNING,Kubernetes 컨테이너에 권한 상승 방지 설정 미흡,k8s-deployment.yaml,"ISMS-P 취지상 최소권한 원칙 및 시스템 접근 통제 미흡에 해당하며, 컨테이너 보안 설정을 통해 권한 상승을 방지해야 하는 관리적/기술적 보호조치 위반으로 볼 수 있습니다.",Privilege Escalation
+INFO,Kubernetes 컨테이너의 비루트 실행 보장 미설정,k8s-deployment.yaml,"ISMS-P 관점에서 안전하지 않은 기본 설정 방치로 인한 권한 상승 가능성에 해당하며, 최소권한 원칙 및 접근통제 강화 취지에 반할 수 있습니다.",Privilege Escalation
+WARNING,Kubernetes 컨테이너 권한 상승 방지 설정 누락,k8s-deployment.yaml,보호대책 요구사항: 컨테이너/시스템의 권한 상승 방지 및 최소권한 원칙 미준수 가능성,Privilege Escalation
+WARNING,초기 컨테이너에도 권한 상승 방지 설정 점검 필요,k8s-deployment.yaml,보호대책 요구사항: 운영시스템의 보안설정 미흡 및 최소권한 통제 미흡,Privilege Escalation
+INFO,Kubernetes 컨테이너가 비루트 실행을 강제하지 않음,k8s-deployment.yaml,"ISMS-P 취지상 최소권한 원칙 및 안전한 시스템 구성 기준에 부합하지 않을 수 있으며, 권한 상승 방지 통제 미흡에 해당할 수 있습니다.",Privilege Escalation
+WARNING,Kubernetes 컨테이너 권한 상승 제한 미설정,k8s-deployment.yaml,ISMS-P 보호대책 요구사항 중 시스템/서비스의 보안 취약점에 대한 적절한 보호대책 마련 및 운영환경 보호조치 미흡에 해당할 수 있습니다.,Privilege Escalation
+WARNING,Kubernetes 컨테이너에 권한 상승 방지 설정 누락,k8s-minikube.yaml,ISMS-P 취지상 최소 권한 원칙 및 안전한 시스템 설정 미흡에 해당할 수 있습니다.,Privilege Escalation
+INFO,Kubernetes 컨테이너 비루트 실행 설정 미흡,k8s-deployment.yaml,"정보시스템 운영 보안관리 미흡(비루트 실행 및 최소권한 원칙 미준수), 보호대책 수립·운영 미흡",Privilege Escalation
+INFO,initContainer 포함 Pod 보안 컨텍스트 미설정,k8s-deployment.yaml,"정보시스템 접근권한 통제 미흡, 최소권한 원칙 미준수",Privilege Escalation
+INFO,Kubernetes 컨테이너가 non-root 실행 설정 없이 배포됨,k8s-minikube.yaml,해당 없음(개인정보 처리·보관·제3자 제공·신고 지침과 직접 관련된 취약점이 아님),Privilege Escalation
+WARNING,Kubernetes 컨테이너 권한 상승 방지 설정 미흡,k8s-deployment.yaml,"2.11.2 취약점 점검 및 조치, 2.10.2 클라우드 보안, 2.6.1 네트워크 접근/컨테이너 실행 통제, 2.8.1 보안 요구사항 정의",Privilege Escalation
+WARNING,Kubernetes 컨테이너 권한 상승 방지 설정 미흡,k8s-deployment.yaml,"2.11.2 취약점 점검 및 조치, 2.10.2 클라우드 보안, 2.6.1 네트워크 접근/컨테이너 실행 통제, 2.8.1 보안 요구사항 정의",Privilege Escalation
+INFO,Kubernetes 컨테이너의 비루트 실행 설정 미흡,k8s-minikube.yaml,ISMS-P 관리적·기술적 통제 측면에서 최소권한 원칙 및 안전한 시스템 설정 준수 미흡에 해당할 수 있습니다.,Privilege Misconfiguration
+WARNING,Kubernetes 컨테이너의 권한 상승 방지 설정 누락,k8s-minikube.yaml,"보호대책 요구사항 위반 가능성. 안전한 운영을 위한 최소 권한 원칙 및 권한 상승 방지 설정이 미흡하며, 취약점 조치에 대한 사전 보완대책 관점과도 부합합니다.",Privilege Escalation
+MEDIUM,Kubernetes 컨테이너 권한 상승 방지 설정 미구성,k8s-minikube.yaml,"ISMS-P의 안전한 시스템 운영 및 접근통제/권한관리 원칙에 부합하지 않는 보안 설정 미흡으로 볼 수 있습니다. 다만 사용자가 제공한 ISMS-P 참조 문구는 개인정보 처리통지/제3자 제공 철회 등과 직접 연관된 조항으로, 본 Kubernetes 권한상승 설정 미비와는 직접 대응되지 않습니다.",Privilege Escalation
+INFO,Kubernetes 컨테이너가 비루트(non-root)로 실행되도록 보안 컨텍스트가 누락됨,k8s-minikube.yaml,"개인정보 및 중요정보 처리 시스템에 대해 최소권한 원칙과 안전한 시스템 운영 통제가 요구되며, root 실행을 허용하는 배포 설정은 접근통제 및 안전한 운영관리 측면의 통제 미흡으로 볼 수 있습니다.",Privilege Escalation
+INFO,Kubernetes 컨테이너가 비루트 실행 보장을 위한 보안 컨텍스트가 누락됨,k8s-minikube.yaml,ISMS-P 보호대책 요구사항 위반 가능: 최소권한 원칙 및 시스템/서비스 보안설정 미흡. 컨테이너 실행계정이 root일 수 있는 상태로 운영되면 접근통제 및 권한관리 측면의 보안조치가 부족한 것으로 해석될 수 있습니다.,Privilege Escalation
+WARNING,Kubernetes 컨테이너의 권한 상승 방지 설정 누락,k8s-minikube.yaml,최소권한 원칙 미준수 및 시스템·네트워크·애플리케이션 보안조치 미흡에 해당할 수 있음,Privilege Escalation
+INFO,분석 불가: 대상 소스코드 미확보,book/frontend/src/app/login/page.js,해당 없음,
+INFO,분석 불가: 대상 소스 파일 미확인,book/frontend/src/app/password/change/page.js,해당 없음,
+INFO,분석 불가: 대상 파일을 찾지 못함,book/frontend/src/app/userpage/view/page.js,해당 없음,
+INFO,분석 불가: 대상 소스 파일을 확인하지 못함,book/src/main/java/com/aivle0102/book/domain/ApiResponse.java,해당 없음,
+INFO,분석 불가: 대상 소스 파일 미확인,book/src/main/java/com/aivle0102/book/controller/UserController.java,해당 없음,
+INFO,분석 불가: 대상 파일 미확인,book/src/main/java/com/aivle0102/book/dto/ChangePasswordRequest.java,해당 없음,
+INFO,분석 불가: 대상 소스 파일 접근 실패,book/src/main/java/com/aivle0102/book/service/impl/UserServiceImpl.java,해당 없음,
+INFO,분석 불가: 대상 소스 파일 접근 실패,book/src/main/java/com/aivle0102/book/service/impl/LoginServiceImpl.java,해당 없음(코드 미확인으로 판단 불가),

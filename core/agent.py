@@ -62,7 +62,7 @@ SYSTEM_PROMPT_SEMGREP_ANALYSIS = """[Role: Senior Application Security Engineer]
 2. 실제 취약점(TP) 판별: 소스(입력)부터 싱크(실행부)까지 경로 증명, 페이로드 작성, 방어 코드 적용 방안을 준비하세요.
 3. 코드 문맥이 부족하다면 추측하지 말고 제공된 `read_source` 로 해당 라인을 확인하세요. (최대 1~2회 제한)
 4. (중요) 도구를 호출하거나 분석을 최종 완료하기 전, 반드시 해당 취약점에 대한 논리적인 추론 과정(Chain-of-Thought)을 먼저 텍스트로 길고 자세히 풀어서 출력하세요.
-5. 모든 문장 및 사고 과정은 한국어로 편하게 서술하세요.
+6. (중요) 심각도가 LOW나 INFO인 사소한 건은 토큰 및 리포트 공간을 아끼기 위해 복잡한 분석(Taint Analysis, 코드 시나리오 등)을 생략하고, 직관적으로 5~6줄 이내로 간단하게 핵심만 언급하고 넘어가세요.
 """
 
 SYSTEM_PROMPT_DEEP_ANALYSIS = """[Role: Senior Application Security Engineer]
@@ -78,7 +78,7 @@ SYSTEM_PROMPT_DEEP_ANALYSIS = """[Role: Senior Application Security Engineer]
 - 제공된 코드를 분석하여 타겟에 해당하는 결함만 도출하세요.
 - 취약점이 전혀 없다면 억지로 만들어내지 마세요.
 - 실제 Exploit 가능한 결함만 확인하세요. (단순 네이밍 컨벤션 미준수 등은 무시)
-- (중요) 의심되는 로직에 결론을 내리거나 도구를 호출하기 전에, 반드시 해당 코드의 데이터 흐름과 취약 가능성에 대한 사고 과정(Chain-of-Thought)을 텍스트로 상세히 서술하세요!
+- (중요) 심각도가 LOW나 INFO인 사소한 건은 토큰 및 리포트 공간을 아끼기 위해 복잡한 분석(데이터 흐름 패스 등)을 생략하고, 직관적으로 5~6줄 이내로 간단하게 핵심만 언급하고 넘어가세요.
 """
 
 
@@ -182,6 +182,10 @@ class OpenAIAgent:
         ctype = state["context_type"]
         
         # 간단한 프롬프트로 의심 여부 판독
+        if ctx.get("lazy_load"):
+            print(f"  [Lazy] 대용량 파일이므로 단계 2 필터링을 생략하고 심층 분석으로 직행: {ctx.get('file_path', '')}")
+            return {"is_vulnerable_candidate": True}
+            
         if ctype == "semgrep":
             prompt = f"Semgrep 탐지결과: {ctx.get('message', '')}\n파일: {ctx.get('file_path', '')}\n코드 스니펫:\n{ctx.get('code_snippet', '')}"
         else:
@@ -331,12 +335,39 @@ class OpenAIAgent:
     def analyze_critical_logic(self, critical_files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         all_findings = []
         
+        import re
         def _process(ctx, idx):
             content = ctx.get("content", "")
+            
             if len(content) > 15000:
-                print(f"  [→] 대용량 파일 스킵 (추후 분할 처리 구현 예정): {ctx.get('file_path', '')}")
-                return []
+                print(f"  [→] 대용량 파일 Lazy Loading 전환: {ctx.get('file_path', '')}")
+                ctx["lazy_load"] = True
                 
+                # 상단 50줄 + 함수/클래스 시그니처 추출
+                lines = content.splitlines()
+                header = "\n".join(lines[:50])
+                
+                signatures = []
+                sig_pattern = re.compile(r'^\s*(def |class |function |async function |const \w+ = \(.*?\) =>|export const |export function |type |interface |func |public |private |protected )')
+                for i, line in enumerate(lines):
+                    if sig_pattern.match(line):
+                        signatures.append(f"Line {str(i+1).ljust(4)}: {line.strip()[:100]}")
+                        
+                sig_text = "\n".join(signatures)
+                if not sig_text:
+                    sig_text = "감지된 함수/클래스 시그니처가 없습니다."
+                
+                ctx["content"] = (
+                    "[SYSTEM] 이 파일은 대용량 파일(15,000자 초과)이므로 전체 코드가 생략되었습니다.\n"
+                    "아래 제공된 '파일 상단 내용'과 '구조 힌트(함수/클래스 목록)'를 참조하세요.\n"
+                    "당신은 `read_source(file_path, start_line, end_line)` 도구를 반복 사용하여 의심되는 부분을 직접 읽어보아야 합니다.\n"
+                    "추측성 취약점 보고는 금지되며, 반드시 도구로 실제 코드를 확인 후 심층 분석(CoT)을 진행하세요.\n\n"
+                    "## 1. 파일 상단 50줄 (Header & Imports)\n"
+                    "```\n" + header + "\n```\n\n"
+                    "## 2. 감지된 함수/클래스 목록 (힌트 - 줄 번호 참조)\n"
+                    "```\n" + sig_text + "\n```"
+                )
+
             print(f"  [→] 핵심 로직 심층 분석 중... ({idx + 1}/{len(critical_files)}) {ctx.get('file_path', '')}")
             initial_state: AnalysisState = {
                 "context": ctx,
