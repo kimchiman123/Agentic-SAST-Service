@@ -18,6 +18,21 @@ SEVERITY_PREFIX = {
 # 심각도 우선순위 (정렬용)
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 
+# Semgrep 심각도 → 내부 심각도 매핑 (Semgrep은 ERROR/WARNING 등을 사용)
+SEMGREP_SEVERITY_MAP = {
+    "ERROR": "HIGH",
+    "WARNING": "MEDIUM",
+    "INFO": "INFO",
+}
+
+
+def _normalize_severity(severity: str) -> str:
+    """Semgrep 등 외부 도구의 심각도를 내부 체계(CRITICAL~INFO)로 정규화합니다."""
+    sev = severity.upper().strip()
+    if sev in SEVERITY_ORDER:
+        return sev
+    return SEMGREP_SEVERITY_MAP.get(sev, "INFO")
+
 
 def _sort_by_severity(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """심각도 기준으로 취약점을 정렬합니다."""
@@ -26,36 +41,47 @@ def _sort_by_severity(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         key=lambda f: SEVERITY_ORDER.get(f.get("severity", "INFO"), 5)
     )
 
+MAX_CODE_LINES = 15  # 코드 블록 최대 줄 수 (PDF 페이지 절약)
+
+
 def _clean_code_block(code_str: Any) -> str:
-    """LLM이 반환한 코드 스니펫에서 불필요한 마크다운 백틱(```)을 안전하게 제거합니다."""
+    """LLM이 반환한 코드 스니펫에서 마크다운 백틱과 불필요한 텍스트를 제거하고 길이를 제한합니다."""
     if not isinstance(code_str, str):
         return str(code_str)
     code_str = code_str.strip()
-    code_str = re.sub(r"^```[a-zA-Z0-9_\-\+]*\n", "", code_str)
-    code_str = re.sub(r"^```", "", code_str)
-    code_str = re.sub(r"\n```$", "", code_str)
-    code_str = re.sub(r"```$", "", code_str)
-    return code_str.strip()
+    # 백틱 블록 마커 제거
+    code_str = re.sub(r"```[a-zA-Z0-9_\-\+]*", "", code_str)
+    code_str = re.sub(r"```", "", code_str)
+    # LLM이 코드 블록 안에 섞어 넣는 마크다운 헤더/볼드 텍스트 제거
+    code_str = re.sub(r"^\*\*[^*]+\*\*:?\s*$", "", code_str, flags=re.MULTILINE)
+    code_str = re.sub(r"\n{3,}", "\n\n", code_str)
+    code_str = code_str.strip()
+    # 줄 수 제한
+    code_lines = code_str.splitlines()
+    if len(code_lines) > MAX_CODE_LINES:
+        code_str = "\n".join(code_lines[:MAX_CODE_LINES]) + f"\n... ({len(code_lines) - MAX_CODE_LINES}줄 생략)"
+    return code_str
 
 
 def _calculate_score(findings: List[Dict[str, Any]]) -> int:
-    """보안 점수를 계산합니다 (0-100)."""
-    if not findings:
+    """보안 점수를 가중 비율 기반으로 계산합니다 (0-100)."""
+    tp_findings = [f for f in findings if f.get("is_true_positive", True)]
+    
+    if not tp_findings:
         return 100
     
-    deduction = 0
-    for f in findings:
-        # False Positive는 점수 차감 제외
-        if f.get("source") == "semgrep_verified" and not f.get("is_true_positive", True):
-            continue
-            
+    # 가중치 기반 위험도 산출 (취약점 수에 비례하되 0점 고착 방지)
+    weights = {"CRITICAL": 10.0, "HIGH": 5.0, "MEDIUM": 2.0, "LOW": 0.5, "INFO": 0.0}
+    total_weight = 0.0
+    for f in tp_findings:
         sev = f.get("severity", "INFO").upper()
-        if sev == "CRITICAL": deduction += 25
-        elif sev == "HIGH": deduction += 15
-        elif sev == "MEDIUM": deduction += 5
-        elif sev == "LOW": deduction += 1
-        
-    return max(0, 100 - deduction)
+        total_weight += weights.get(sev, 0.0)
+    
+    # 로그 스케일 감점: 취약점이 많아도 0점에 고착되지 않음
+    import math
+    deduction = min(90, int(30 * math.log2(1 + total_weight)))
+    
+    return max(10, 100 - deduction)
 
 def _build_executive_summary(findings: List[Dict[str, Any]]) -> str:
     """핵심 요약 대시보드(HTML 그리드)를 생성합니다."""
@@ -101,146 +127,94 @@ def _build_executive_summary(findings: List[Dict[str, Any]]) -> str:
 
 
 def _render_semgrep_finding(idx: int, finding: Dict[str, Any]) -> str:
-    """Semgrep 검증 결과 단일 항목을 렌더링합니다."""
+    """Semgrep 검증 결과 단일 항목을 압축 레이아웃으로 렌더링합니다."""
     sev = finding.get("severity", "INFO")
     prefix = SEVERITY_PREFIX.get(sev, f"[{sev}]")
     is_tp = finding.get("is_true_positive", True)
-    status = "True Positive" if is_tp else "False Positive"
+    status = "TP" if is_tp else "FP"
 
+    # 메타정보 한 줄 압축
+    rule_id = finding.get('rule_id', 'N/A')
+    file_path = finding.get('original_file', 'N/A')
     lines = [
         f"### {idx}. {prefix} {finding.get('title', '제목 없음')}",
-        f"- **심각도:** {sev}",
-        f"- **판정:** {status}",
-        f"- **규칙 ID:** `{finding.get('rule_id', 'N/A')}`",
-        f"- **파일:** `{finding.get('original_file', 'N/A')}`",
-        f"- **출처:** 코드 정적 분석",
+        f"`{sev}` | `{status}` | `{rule_id}` | `{file_path}`",
         "",
-        f"**설명:** {finding.get('description', '설명 없음')}",
+        f"{finding.get('description', '설명 없음')}",
         "",
     ]
     
-    # LOW나 INFO인 사소한 건은 토큰/리포팅 절약을 위해 상세 내역 출력 생략
+    # LOW/INFO는 설명만으로 충분
     if sev in ["LOW", "INFO"]:
         lines.append("---\n")
         return "\n".join(lines)
 
+    # 오탐 사유 (FP인 경우만)
     if not is_tp and finding.get("false_positive_reason"):
-        lines.extend([
-            "**오탐 판단 사유:**",
-            f"> {finding['false_positive_reason']}",
-            "",
-        ])
+        lines.append(f"> **오탐 사유:** {finding['false_positive_reason']}")
+        lines.append("")
 
-    if finding.get("taint_analysis"):
-        lines.extend([
-            "**데이터 흐름 추적 (Taint Analysis):**",
-            f"> {finding['taint_analysis']}",
-            "",
-        ])
-
+    # 분석 내역 (공격 시나리오만 출력, Taint는 생략하여 압축)
     if finding.get("exploit_scenario"):
-        lines.extend([
-            "**공격 시나리오:**",
-            f"> {finding['exploit_scenario']}",
-            "",
-        ])
+        lines.append(f"> **공격 시나리오:** {finding['exploit_scenario']}")
+        lines.append("")
 
-    if finding.get("affected_code"):
-        lines.extend([
-            "**취약 원본 코드:**",
-            "```",
-            _clean_code_block(finding["affected_code"]),
-            "```",
-            "",
-        ])
+    # 코드 블록: TP일 때만 표시 (오탐 건은 코드 생략)
+    if is_tp and finding.get("affected_code"):
+        lines.extend(["**취약 코드:**", "```", _clean_code_block(finding["affected_code"]), "```", ""])
 
-    if finding.get("remediation_code"):
-        lines.extend([
-            "**수정 패치 코드 (Remediation):**",
-            "```",
-            _clean_code_block(finding["remediation_code"]),
-            "```",
-            "",
-        ])
+    if is_tp and finding.get("remediation_code"):
+        lines.extend(["**수정 코드:**", "```", _clean_code_block(finding["remediation_code"]), "```", ""])
 
     if finding.get("remediation_description"):
         lines.append(f"**수정 가이드:** {finding['remediation_description']}")
         lines.append("")
 
     if finding.get("isms_p_violation"):
-        lines.extend([
-            "**ISMS-P 위반 사항:**",
-            f"> {finding['isms_p_violation']}",
-            "",
-        ])
+        lines.append(f"> **ISMS-P:** {finding['isms_p_violation']}")
+        lines.append("")
 
     lines.append("---\n")
     return "\n".join(lines)
 
 
 def _render_deep_finding(idx: int, finding: Dict[str, Any]) -> str:
-    """심층 분석 결과 단일 항목을 렌더링합니다."""
+    """심층 분석 결과 단일 항목을 압축 레이아웃으로 렌더링합니다."""
     sev = finding.get("severity", "INFO")
     prefix = SEVERITY_PREFIX.get(sev, f"[{sev}]")
 
+    vuln_type = finding.get('vulnerability_type', 'N/A')
+    file_path = finding.get('file_path', 'N/A')
     lines = [
         f"### {idx}. {prefix} {finding.get('title', '제목 없음')}",
-        f"- **심각도:** {sev}",
-        f"- **유형:** `{finding.get('vulnerability_type', 'N/A')}`",
-        f"- **파일:** `{finding.get('file_path', 'N/A')}`",
-        f"- **출처:** 비즈니스 로직 심층 분석",
+        f"`{sev}` | `{vuln_type}` | `{file_path}`",
         "",
-        f"**설명:** {finding.get('description', '설명 없음')}",
+        f"{finding.get('description', '설명 없음')}",
         "",
     ]
     
-    # LOW나 INFO인 사소한 건은 토큰/리포팅 절약을 위해 상세 내역 출력 생략
+    # LOW/INFO는 설명만으로 충분
     if sev in ["LOW", "INFO"]:
         lines.append("---\n")
         return "\n".join(lines)
 
-    if finding.get("taint_analysis"):
-        lines.extend([
-            "**데이터 흐름 추적 (Taint Analysis):**",
-            f"> {finding['taint_analysis']}",
-            "",
-        ])
-
     if finding.get("exploit_scenario"):
-        lines.extend([
-            "**공격 시나리오:**",
-            f"> {finding['exploit_scenario']}",
-            "",
-        ])
+        lines.append(f"> **공격 시나리오:** {finding['exploit_scenario']}")
+        lines.append("")
 
     if finding.get("affected_code"):
-        lines.extend([
-            "**취약 원본 코드:**",
-            "```",
-            _clean_code_block(finding["affected_code"]),
-            "```",
-            "",
-        ])
+        lines.extend(["**취약 코드:**", "```", _clean_code_block(finding["affected_code"]), "```", ""])
 
     if finding.get("remediation_code"):
-        lines.extend([
-            "**수정 패치 코드 (Remediation):**",
-            "```",
-            _clean_code_block(finding["remediation_code"]),
-            "```",
-            "",
-        ])
+        lines.extend(["**수정 코드:**", "```", _clean_code_block(finding["remediation_code"]), "```", ""])
 
     if finding.get("remediation_description"):
         lines.append(f"**수정 가이드:** {finding['remediation_description']}")
         lines.append("")
 
     if finding.get("isms_p_violation"):
-        lines.extend([
-            "**ISMS-P 위반 사항:**",
-            f"> {finding['isms_p_violation']}",
-            "",
-        ])
+        lines.append(f"> **ISMS-P:** {finding['isms_p_violation']}")
+        lines.append("")
 
     lines.append("---\n")
     return "\n".join(lines)
@@ -257,6 +231,10 @@ def format_report(all_findings: List[Dict[str, Any]]) -> str:
         마크다운 포맷의 최종 리포트 텍스트
     """
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 심각도 정규화 (Semgrep의 ERROR/WARNING → HIGH/MEDIUM 변환)
+    for f in all_findings:
+        f["severity"] = _normalize_severity(f.get("severity", "INFO"))
 
     # 출처별 분리
     semgrep_findings = [f for f in all_findings if f.get("source") == "semgrep_verified"]

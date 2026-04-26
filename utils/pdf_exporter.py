@@ -19,7 +19,7 @@ REPORT_CSS = """
     --medium: #d97706;
     --low: #059669;
     --info: #2563eb;
-    --bg-main: #f8fafc;
+    --bg-main: #ffffff;
     --surface: #ffffff;
     --text-main: #1e293b;
     --text-muted: #64748b;
@@ -30,158 +30,168 @@ REPORT_CSS = """
 
 body {
     font-family: 'Inter', 'Noto Sans KR', sans-serif;
-    font-size: 14px;
-    line-height: 1.6;
+    font-size: 11px;
+    line-height: 1.5;
     color: var(--text-main);
     background: var(--bg-main);
-    padding: 60px 80px;
-    max-width: 1000px;
+    padding: 30px 40px;
+    max-width: 900px;
     margin: 0 auto;
 }
 
 /* Typography */
 h1 {
     font-family: 'Outfit', sans-serif;
-    font-size: 42px;
+    font-size: 28px;
     font-weight: 700;
     color: var(--primary);
-    margin-bottom: 8px;
+    margin-bottom: 4px;
     letter-spacing: -0.02em;
 }
 
 h2 {
     font-family: 'Outfit', sans-serif;
-    font-size: 24px;
+    font-size: 18px;
     font-weight: 700;
-    margin-top: 48px;
-    margin-bottom: 24px;
+    margin-top: 24px;
+    margin-bottom: 10px;
     color: #0f172a;
-    border-bottom: 2px solid var(--border);
-    padding-bottom: 8px;
+    border-bottom: 1.5px solid var(--border);
+    padding-bottom: 4px;
 }
 
 h3 {
-    font-size: 18px;
+    font-size: 13px;
     font-weight: 600;
-    margin-top: 32px;
-    margin-bottom: 12px;
+    margin-top: 14px;
+    margin-bottom: 4px;
     color: #1e293b;
 }
 
-p { margin-bottom: 12px; }
-.report-meta { color: var(--text-muted); font-size: 14px; margin-bottom: 40px; }
+p { margin-bottom: 6px; }
+ul { margin-bottom: 6px; padding-left: 18px; }
+li { margin-bottom: 2px; }
+.report-meta { color: var(--text-muted); font-size: 11px; margin-bottom: 16px; }
 
 /* Dashboard & Cards */
 .dashboard {
     display: flex;
-    gap: 20px;
-    margin-bottom: 30px;
+    gap: 12px;
+    margin-bottom: 16px;
 }
 
 .score-card {
-    flex: 1.5;
+    flex: 1;
     background: var(--surface);
-    padding: 24px;
-    border-radius: 16px;
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    padding: 12px;
+    border-radius: 8px;
     border: 1px solid var(--border);
     text-align: center;
 }
 
-.score-label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
-.score-value { font-size: 64px; font-weight: 800; line-height: 1; margin: 12px 0; font-family: 'Outfit', sans-serif; }
-.score-bar-bg { background: #f1f5f9; height: 10px; border-radius: 5px; overflow: hidden; }
-.score-bar-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; }
+.score-label { font-size: 9px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+.score-value { font-size: 36px; font-weight: 800; line-height: 1; margin: 6px 0; font-family: 'Outfit', sans-serif; }
+.score-bar-bg { background: #f1f5f9; height: 6px; border-radius: 3px; overflow: hidden; }
+.score-bar-fill { height: 100%; border-radius: 3px; }
 
-.stats-grid { flex: 2; display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.stats-grid { flex: 2; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .stat-card {
-    padding: 16px;
-    border-radius: 12px;
+    padding: 8px;
+    border-radius: 6px;
     border: 1px solid var(--border);
     background: var(--surface);
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    transition: transform 0.2s;
 }
-.stat-card:hover { transform: translateY(-2px); }
-.stat-label { font-size: 11px; font-weight: 700; color: var(--text-muted); }
-.stat-count { font-size: 28px; font-weight: 700; margin-top: 4px; }
+.stat-label { font-size: 8px; font-weight: 700; color: var(--text-muted); }
+.stat-count { font-size: 20px; font-weight: 700; margin-top: 2px; }
 
-.stat-card.critical { border-left: 4px solid var(--critical); color: var(--critical); }
-.stat-card.high { border-left: 4px solid var(--high); color: var(--high); }
-.stat-card.medium { border-left: 4px solid var(--medium); color: var(--medium); }
-.stat-card.info { border-left: 4px solid var(--info); color: var(--info); }
+.stat-card.critical { border-left: 3px solid var(--critical); color: var(--critical); }
+.stat-card.high { border-left: 3px solid var(--high); color: var(--high); }
+.stat-card.medium { border-left: 3px solid var(--medium); color: var(--medium); }
+.stat-card.info { border-left: 3px solid var(--info); color: var(--info); }
 
 /* Table Style */
 table {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
-    margin: 20px 0;
-    border-radius: 8px;
+    margin: 8px 0;
+    border-radius: 4px;
     overflow: hidden;
     border: 1px solid var(--border);
+    font-size: 10px;
 }
 
 th {
     background: #f8fafc;
     color: #475569;
     font-weight: 600;
-    padding: 12px 16px;
+    padding: 6px 8px;
     text-align: left;
     border-bottom: 1px solid var(--border);
 }
 
 td {
-    padding: 12px 16px;
+    padding: 5px 8px;
     border-bottom: 1px solid var(--border);
     background: #fff;
-    vertical-align: middle;
+    vertical-align: top;
 }
 
 tr:last-child td { border-bottom: none; }
 
+/* Finding meta line */
+.finding-meta { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+
 /* Code blocks */
 blockquote {
-    border-left: 4px solid var(--primary);
-    background: #f1f5f9;
-    padding: 16px 20px;
-    margin: 16px 0;
-    border-radius: 0 8px 8px 0;
+    border-left: 3px solid var(--primary);
+    background: #f8fafc;
+    padding: 6px 10px;
+    margin: 6px 0;
+    border-radius: 0 4px 4px 0;
     color: #334155;
-    font-style: italic;
+    font-size: 10px;
+    font-style: normal;
 }
 
 pre {
     background: #1e293b;
     color: #f8fafc;
-    padding: 20px;
-    border-radius: 12px;
+    padding: 8px 10px;
+    border-radius: 4px;
     overflow-x: auto;
-    margin: 16px 0;
-    font-family: 'JetBrains Mono', 'Consolas', monospace;
-    font-size: 13px;
-    box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.06);
+    margin: 6px 0;
+    font-family: 'Consolas', monospace;
+    font-size: 10px;
+    line-height: 1.4;
 }
 
 code {
     background: #f1f5f9;
     color: var(--primary);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-weight: 500;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 10px;
     font-family: monospace;
 }
 
 pre code { background: transparent; color: inherit; padding: 0; }
 
+hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 10px 0;
+}
+
 /* Responsive & Print */
 .page-break { page-break-after: always; }
 
 @media print {
-    body { background: #fff; padding: 0; }
+    body { background: #fff; padding: 15px; font-size: 10px; }
     .stat-card { border: 1px solid #ddd; page-break-inside: avoid; }
     h2, h3 { page-break-after: avoid; }
     pre, table { page-break-inside: avoid; }
@@ -189,7 +199,7 @@ pre code { background: transparent; color: inherit; padding: 0; }
 
 @page {
     size: A4;
-    margin: 20mm;
+    margin: 15mm;
 }
 """
 
@@ -224,7 +234,7 @@ HTML_BODY_PLACEHOLDER
 def export_pdf(md_content: str, output_path: str) -> str:
     """
     Markdown 리포트를 PDF로 변환하여 저장합니다.
-    wkhtmltopdf가 없으면 HTML로 폴백합니다.
+    1차: pdfkit(wkhtmltopdf), 2차: PyMuPDF(fitz), 3차: HTML 폴백
 
     Args:
         md_content: Markdown 형식의 리포트 텍스트
@@ -235,17 +245,22 @@ def export_pdf(md_content: str, output_path: str) -> str:
     """
     html_content = markdown_to_html(md_content)
 
-    # PDF 변환 시도 (pdfkit + wkhtmltopdf)
+    # 1차: pdfkit + wkhtmltopdf (Docker 환경)
     pdf_path = _try_pdfkit_export(html_content, output_path)
     if pdf_path:
         return pdf_path
 
-    # 폴백: HTML 파일로 저장 (브라우저에서 열어 인쇄 가능)
+    # 2차: PyMuPDF Story API (로컬 환경, 외부 바이너리 불필요)
+    pdf_path = _try_pymupdf_export(html_content, output_path)
+    if pdf_path:
+        return pdf_path
+
+    # 3차 폴백: HTML 파일로 저장
     html_path = output_path.rsplit(".", 1)[0] + ".html"
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    print("[*] wkhtmltopdf가 설치되지 않아 HTML로 저장되었습니다.")
+    print("[*] PDF 변환에 실패하여 HTML로 저장되었습니다.")
     print("    브라우저에서 열어 Ctrl+P로 PDF 인쇄가 가능합니다.")
     return html_path
 
@@ -273,5 +288,40 @@ def _try_pdfkit_export(html_content: str, output_path: str) -> Optional[str]:
         # wkhtmltopdf 바이너리가 없는 경우
         return None
     except Exception as e:
-        print(f"[!] PDF 변환 중 오류 발생: {e}")
+        print(f"[!] pdfkit PDF 변환 중 오류 발생: {e}")
+        return None
+
+
+def _try_pymupdf_export(html_content: str, output_path: str) -> Optional[str]:
+    """PyMuPDF(fitz)의 Story API를 이용한 PDF 변환을 시도합니다."""
+    try:
+        import fitz
+
+        # Story API로 HTML+CSS를 PDF 페이지로 렌더링
+        story = fitz.Story(html=html_content)
+
+        # A4 크기 (포인트 단위: 595 x 842)
+        page_width = 595
+        page_height = 842
+        margin = 50  # 약 17.6mm
+
+        content_rect = fitz.Rect(margin, margin, page_width - margin, page_height - margin)
+
+        writer = fitz.DocumentWriter(output_path)
+
+        more_content = True
+        while more_content:
+            device = writer.begin_page(fitz.Rect(0, 0, page_width, page_height))
+            more_content, _ = story.place(content_rect)
+            story.draw(device)
+            writer.end_page()
+
+        writer.close()
+        print("[*] PyMuPDF를 사용하여 PDF를 생성했습니다.")
+        return output_path
+
+    except ImportError:
+        return None
+    except Exception as e:
+        print(f"[!] PyMuPDF PDF 변환 중 오류 발생: {e}")
         return None
