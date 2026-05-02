@@ -137,8 +137,9 @@ def _render_semgrep_finding(idx: int, finding: Dict[str, Any]) -> str:
     rule_id = finding.get('rule_id', 'N/A')
     file_path = finding.get('original_file', 'N/A')
     lines = [
-        f"### {idx}. {prefix} {finding.get('title', '제목 없음')}",
-        f"`{sev}` | `{status}` | `{rule_id}` | `{file_path}`",
+        '<div class="finding-card" markdown="1">',
+        f"### {idx}. {finding.get('title', '제목 없음')}",
+        f"<p class='finding-meta'><span class='badge {sev.lower()}'>{sev}</span> | <b>Status:</b> {status} | <b>Rule:</b> <code>{rule_id}</code> | <b>File:</b> <code>{file_path}</code></p>",
         "",
         f"{finding.get('description', '설명 없음')}",
         "",
@@ -146,7 +147,7 @@ def _render_semgrep_finding(idx: int, finding: Dict[str, Any]) -> str:
     
     # LOW/INFO는 설명만으로 충분
     if sev in ["LOW", "INFO"]:
-        lines.append("---\n")
+        lines.append("</div>\n")
         return "\n".join(lines)
 
     # 오탐 사유 (FP인 경우만)
@@ -174,7 +175,16 @@ def _render_semgrep_finding(idx: int, finding: Dict[str, Any]) -> str:
         lines.append(f"> **ISMS-P:** {finding['isms_p_violation']}")
         lines.append("")
 
-    lines.append("---\n")
+    decision_tree = finding.get("decision_tree", [])
+    if decision_tree:
+        lines.append("#### 🧠 AI Audit Trail (추론 과정)")
+        lines.append("<div style='background-color: #f8f9fa; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.9em; margin-bottom: 15px;'>")
+        steps = " ➔ ".join([f"<b>[{step}]</b>" for step in decision_tree])
+        lines.append(f"  {steps}")
+        lines.append("</div>")
+        lines.append("")
+
+    lines.append("</div>\n")
     return "\n".join(lines)
 
 
@@ -186,8 +196,9 @@ def _render_deep_finding(idx: int, finding: Dict[str, Any]) -> str:
     vuln_type = finding.get('vulnerability_type', 'N/A')
     file_path = finding.get('file_path', 'N/A')
     lines = [
-        f"### {idx}. {prefix} {finding.get('title', '제목 없음')}",
-        f"`{sev}` | `{vuln_type}` | `{file_path}`",
+        '<div class="finding-card" markdown="1">',
+        f"### {idx}. {finding.get('title', '제목 없음')}",
+        f"<p class='finding-meta'><span class='badge {sev.lower()}'>{sev}</span> | <b>Type:</b> {vuln_type} | <b>File:</b> <code>{file_path}</code></p>",
         "",
         f"{finding.get('description', '설명 없음')}",
         "",
@@ -195,7 +206,7 @@ def _render_deep_finding(idx: int, finding: Dict[str, Any]) -> str:
     
     # LOW/INFO는 설명만으로 충분
     if sev in ["LOW", "INFO"]:
-        lines.append("---\n")
+        lines.append("</div>\n")
         return "\n".join(lines)
 
     if finding.get("exploit_scenario"):
@@ -216,7 +227,16 @@ def _render_deep_finding(idx: int, finding: Dict[str, Any]) -> str:
         lines.append(f"> **ISMS-P:** {finding['isms_p_violation']}")
         lines.append("")
 
-    lines.append("---\n")
+    decision_tree = finding.get("decision_tree", [])
+    if decision_tree:
+        lines.append("#### 🧠 AI Audit Trail (추론 과정)")
+        lines.append("<div style='background-color: #f8f9fa; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.9em; margin-bottom: 15px;'>")
+        steps = " ➔ ".join([f"<b>[{step}]</b>" for step in decision_tree])
+        lines.append(f"  {steps}")
+        lines.append("</div>")
+        lines.append("")
+
+    lines.append("</div>\n")
     return "\n".join(lines)
 
 

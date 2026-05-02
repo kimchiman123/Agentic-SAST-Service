@@ -144,7 +144,39 @@ td {
 tr:last-child td { border-bottom: none; }
 
 /* Finding meta line */
-.finding-meta { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+.finding-meta { font-size: 10px; color: var(--text-muted); margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;}
+
+.finding-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.finding-card h3 {
+    margin-top: 0;
+    font-size: 15px;
+    color: var(--primary);
+    border: none;
+}
+
+.badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #fff;
+}
+.badge.critical { background: var(--critical); }
+.badge.high { background: var(--high); }
+.badge.medium { background: var(--medium); }
+.badge.low { background: var(--low); }
+.badge.info { background: var(--info); }
 
 /* Code blocks */
 blockquote {
@@ -208,7 +240,7 @@ def markdown_to_html(md_content: str) -> str:
     """Markdown 텍스트를 스타일이 적용된 HTML 문서로 변환합니다."""
     html_body = markdown.markdown(
         md_content,
-        extensions=["tables", "fenced_code", "nl2br"],
+        extensions=["tables", "fenced_code", "nl2br", "md_in_html"],
     )
 
     # f-string 대신 .replace()를 사용하여 CSS 내부의 중괄호 충돌을 방지합니다.

@@ -45,6 +45,7 @@ class FindingModel(BaseModel):
     remediation_code: str = Field(default="", description="수정된 안전한 코드")
     remediation_description: str = Field(default="", description="수정 방법 설명 (한국어)")
     isms_p_violation: Optional[str] = Field(default=None, description="ISMS-P 위반 사항")
+    decision_tree: List[str] = Field(default_factory=list, description="취약점 판별부터 규정 매핑까지의 논리적 흐름 (최대 4~5단계의 간결한 문장 배열)")
 
 class OutputModel(BaseModel):
     findings: List[FindingModel] = Field(default_factory=list)
@@ -66,6 +67,7 @@ SYSTEM_PROMPT_SEMGREP_ANALYSIS = """[Role: Senior Application Security Engineer]
 4. (중요) 도구를 호출하거나 분석을 최종 완료하기 전, 반드시 해당 취약점에 대한 논리적인 추론 과정(Chain-of-Thought)을 먼저 텍스트로 길고 자세히 풀어서 출력하세요.
 5. (중요) ISMS-P 규정 위반을 설명할 때, 가능하다면 제공된 RAG 문맥 내의 구체적인 기술적 취약점 코드(예: U-01 등)나 OT 제로트러스트 보안 원칙을 함께 인용하여 보고서를 전문적으로 작성하세요.
 6. (중요) 심각도가 LOW나 INFO인 사소한 건은 토큰 및 리포트 공간을 아끼기 위해 복잡한 분석(Taint Analysis, 코드 시나리오 등)을 생략하고, 직관적으로 5~6줄 이내로 간단하게 핵심만 언급하고 넘어가세요.
+7. (중요) 취약점 분석이 완료되면, 반드시 당신이 거쳐온 논리적 추론 과정을 `decision_tree` 배열에 순서대로 요약하세요. (예: ["사용자 제어 입력값 발견", "입력값 검증 부재 확인", "SQL Injection 위험성 도출", "ISMS-P 2.6.2 위반"])
 """
 
 SYSTEM_PROMPT_DEEP_ANALYSIS = """[Role: Senior Application Security Engineer]
@@ -83,6 +85,7 @@ SYSTEM_PROMPT_DEEP_ANALYSIS = """[Role: Senior Application Security Engineer]
 - 실제 Exploit 가능한 결함만 확인하세요. (단순 네이밍 컨벤션 미준수 등은 무시)
 - (중요) ISMS-P 규정 위반을 설명할 때, 가능하다면 제공된 RAG 문맥 내의 구체적인 기술적 취약점 코드(예: U-01 등)나 OT 제로트러스트 보안 원칙을 함께 인용하여 보고서를 전문적으로 작성하세요.
 - (중요) 심각도가 LOW나 INFO인 사소한 건은 토큰 및 리포트 공간을 아끼기 위해 복잡한 분석(데이터 흐름 패스 등)을 생략하고, 직관적으로 5~6줄 이내로 간단하게 핵심만 언급하고 넘어가세요.
+- (중요) 취약점 분석이 완료되면, 반드시 당신이 거쳐온 논리적 추론 과정을 `decision_tree` 배열에 순서대로 요약하세요. (예: ["사용자 권한 체크 로직 탐색", "권한 검증 누락 확인", "IDOR 위험성 도출", "ISMS-P 2.6.1 위반"])
 """
 
 
@@ -254,6 +257,7 @@ class OpenAIAgent:
         final_prompt = (
             "지금까지의 탐색 과정과 결과를 종합하여, 최종 취약점 보고서를 작성해주세요.\n"
             "취약점이 발견되었다면 findings 리스트에 상세히 담으세요.\n"
+            "또한, 각 취약점의 판별부터 컴플라이언스 매핑까지의 논리적 흐름을 decision_tree 리스트에 4~5단계로 반드시 요약해주세요.\n"
             "**반드시 JSON 형식으로만 응답해야 합니다.**\n"
         )
         
