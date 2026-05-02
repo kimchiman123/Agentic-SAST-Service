@@ -297,8 +297,8 @@ PDF 리포트에는 **보안 점수(0-100)**, **등급별 통계 카드**, **ISM
 | 항목 | 내용 |
 |:---|:---|
 | **분석 대상 레포지토리** | [🔗 kimchiman123/mini_project5](https://github.com/kimchiman123/mini_project5) |
-| **분석 결과 PDF 보고서** | [📄 EKS_20260426_154728.pdf](reports/EKS_20260426_154728.pdf) |
-| **취약점 상세 내역 (Excel)** | [📊 EKS_20260426_154728.xlsx](reports/EKS_20260426_154728.xlsx) |
+| **분석 결과 PDF 보고서** | [📄 EKS_20260426_154728.pdf](reports/EKS_20260502_121225.pdf) |
+| **취약점 상세 내역 (Excel)** | [📊 EKS_20260426_154728.xlsx](reports/EKS_20260502_121225.xlsx) |
 
 > 해당 프로젝트는 Spring Boot 백엔드, React 프론트엔드, Nginx 리버스 프록시, Docker Compose 기반으로 구성된 AWS EKS 배포 서비스입니다.
 > SAST 분석을 통해 CORS 설정, SQL 인젝션, 컨테이너 권한 설정, OAuth 인증 흐름 등 다수의 보안 취약점이 탐지되었으며, 각 항목에 대한 ISMS-P 규정 매핑과 구체적인 수정 가이드가 보고서에 포함되어 있습니다.
