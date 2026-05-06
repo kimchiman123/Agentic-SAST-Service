@@ -79,13 +79,12 @@ SYSTEM_PROMPT_DEEP_ANALYSIS = """[Role: Senior Application Security Engineer]
 3. Input Logic Bypass (예상치 못한 값, 오버플로우 우회)
 4. Hardcoded Secrets (DB, API Key 등)
 
-[지시사항]
-- 제공된 코드를 분석하여 타겟에 해당하는 결함만 도출하세요.
-- 취약점이 전혀 없다면 억지로 만들어내지 마세요.
-- 실제 Exploit 가능한 결함만 확인하세요. (단순 네이밍 컨벤션 미준수 등은 무시)
-- (중요) ISMS-P 규정 위반을 설명할 때, 가능하다면 제공된 RAG 문맥 내의 구체적인 기술적 취약점 코드(예: U-01 등)나 OT 제로트러스트 보안 원칙을 함께 인용하여 보고서를 전문적으로 작성하세요.
-- (중요) 심각도가 LOW나 INFO인 사소한 건은 토큰 및 리포트 공간을 아끼기 위해 복잡한 분석(데이터 흐름 패스 등)을 생략하고, 직관적으로 5~6줄 이내로 간단하게 핵심만 언급하고 넘어가세요.
-- (중요) 취약점 분석이 완료되면, 반드시 당신이 거쳐온 논리적 추론 과정을 `decision_tree` 배열에 순서대로 요약하세요. (예: ["사용자 권한 체크 로직 탐색", "권한 검증 누락 확인", "IDOR 위험성 도출", "ISMS-P 2.6.1 위반"])
+[지시사항 - 비용 및 보안 밸런스 최적화]
+1. (Fail Fast): 코드를 검토한 후 실제 Exploit 가능한 로직 결함이 보이지 않는다면, 억지로 취약점을 지어내지 마세요. 불필요한 도구 호출을 멈추고 빈 상태로 즉시 분석을 종료하세요.
+2. (Data Flow 추적): 취약점이 의심된다면 Source(사용자 입력)부터 Sink(실제 동작)까지의 오염(Taint) 경로를 명확하게 추적하여 오탐을 방지하세요.
+3. (Exploit 가능성): 방어 코드(검증 로직)가 존재하여 공격 시나리오가 성립하지 않으면 무시하세요.
+4. (전문성): ISMS-P 규정 위반을 설명할 때, RAG 문맥 내의 구체적인 취약점 코드나 제로트러스트 원칙을 인용하세요.
+5. (CoT 요약): 분석이 완료되면, 당신이 거쳐온 논리적 추론 과정을 `decision_tree` 배열에 순서대로 요약하세요. (예: ["입력값 검증 확인", "음수 입력 우회 도출", "비즈니스 로직 결함 확정"])
 """
 
 
@@ -113,9 +112,9 @@ class OpenAIAgent:
         self.mini_llm = ChatOpenAI(model="gpt-5.4-mini", api_key=api_key, temperature=0.1)
         self.structured_llm = self.mini_llm.with_structured_output(OutputModel)
         
-        # MCP 도구 목록 바인딩
+        # MCP 도구 목록 바인딩 (분석은 Mini가 수행해야 함)
         self.tools = [read_source, search_code]
-        self.nano_llm_with_tools = self.nano_llm.bind_tools(self.tools)
+        self.mini_llm_with_tools = self.mini_llm.bind_tools(self.tools)
         
         self.isms_kb = isms_kb
         self.osv_vulns = osv_vulns or []
@@ -198,7 +197,21 @@ class OpenAIAgent:
         else:
             prompt = f"심층 분석 핵심파일:\n{ctx.get('content', '')[:1000]}..."
             
-        sys_prompt = "너는 보안 분석 예비 검토자다. 전달받은 코드에서 취약점이나 논리적 오류 가능성이 1%라도 보이면 is_vulnerable_candidate를 true로 반환하라. 확실하게 100% 안전한 고정 문자열 반환 등의 코드만 false로 지정하라. 오탐을 적극적으로 허용한다."
+        sys_prompt = """너는 보안 분석 예비 검토자(Discovery Agent)다.
+전달받은 코드를 분석하여 보안상 '위험 가능성'이 있는지 1차적으로 판단하라.
+
+[안전 판정 기준 (false 반환)]
+다음 중 하나라도 해당되며, 인증/DB/파일처리와 무관하다면 무조건 `is_vulnerable_candidate: false`를 반환하라.
+1. 순수 UI, 프론트엔드 렌더링 또는 DOM 조작 코드
+2. 문자열 가공, 수학 계산, 난수 생성, 정렬 등 단순 유틸리티 로직
+3. 더미 데이터, 하드코딩된 에러 메시지, 상수 파일
+
+[위험 판정 기준 (true 반환)]
+다음 단어가 포함되어 있거나 관련 로직이 1줄이라도 있다면 반드시 `is_vulnerable_candidate: true`를 반환하라.
+1. 인증/인가 (JWT, session, password, login, auth, role, token)
+2. 외부 데이터 처리 (eval, request, body, sql, query, fs)
+3. 금융/결제 등 비즈니스 중요 상태 (balance, amount, pay, transfer)
+"""
         
         try:
             res: DiscoveryModel = self.discovery_llm.invoke([
@@ -242,7 +255,7 @@ class OpenAIAgent:
         # LLM(Tool 바인딩됨) 실행 (React 에이전트 루프 수행)
         try:
             invoke_messages = messages + new_messages
-            response = self.nano_llm_with_tools.invoke(invoke_messages)
+            response = self.mini_llm_with_tools.invoke(invoke_messages)
             new_messages.append(response)
         except Exception as e:
             print(f"  [!] Analysis LLM 오류: {e}")

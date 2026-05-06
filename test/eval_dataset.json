@@ -1,0 +1,135 @@
+[
+  {
+    "file_path": "vuln-test-app/payment_api.js",
+    "description": "결제 및 송금 API 서버. 인증, 이체, 계산기 기능 포함.",
+    "vulnerabilities": [
+      {
+        "id": "VULN-001",
+        "type": "취약한 해시 알고리즘 사용",
+        "cwe": "CWE-328",
+        "severity": "HIGH",
+        "lines": [19, 20],
+        "affected_code": "const hash = crypto.createHash('md5').update(password).digest('hex');",
+        "description": "비밀번호 해싱에 MD5를 사용하고 있어 레인보우 테이블 및 충돌 공격에 취약함. bcrypt, scrypt, argon2 등 안전한 알고리즘을 사용해야 함.",
+        "isms_p_violation": "2.6.7 암호키 관리 - 안전한 암호 알고리즘 사용 의무",
+        "exploit_scenario": "공격자가 유출된 해시값에 대해 레인보우 테이블 공격을 수행하여 평문 비밀번호를 복원할 수 있음."
+      },
+      {
+        "id": "VULN-002",
+        "type": "코드 인젝션 (eval 사용)",
+        "cwe": "CWE-94",
+        "severity": "CRITICAL",
+        "lines": [35, 36],
+        "affected_code": "const result = eval(mathFormula);",
+        "description": "사용자 입력값을 검증 없이 eval()에 직접 전달하여 임의 코드 실행(RCE)이 가능함.",
+        "isms_p_violation": "2.6.6 보안 취약점 관리 - 안전한 코딩 기준 준수",
+        "exploit_scenario": "공격자가 mathFormula에 'process.exit(1)' 또는 'require(\"child_process\").exec(\"rm -rf /\")' 등을 주입하여 서버를 완전히 장악할 수 있음."
+      },
+      {
+        "id": "VULN-003",
+        "type": "접근 통제 누락 (IDOR)",
+        "cwe": "CWE-639",
+        "severity": "CRITICAL",
+        "lines": [46, 48, 52, 53, 54, 69],
+        "affected_code": "const loggedInUser = req.headers['x-user-id'];\n// loggedInUser와 fromAccount 일치 여부 미검증",
+        "description": "로그인한 사용자(loggedInUser)와 출금 계좌(fromAccount)의 소유권을 검증하지 않아, 타인의 계좌에서 임의로 자금을 이체할 수 있음.",
+        "isms_p_violation": "2.6.1 접근 통제 - 사용자 인증 및 권한 부여 정책 수립",
+        "exploit_scenario": "공격자가 x-user-id 헤더를 자신의 ID로 설정하고, fromAccount를 피해자의 계좌번호로 설정하여 자금을 탈취할 수 있음."
+      },
+      {
+        "id": "VULN-004",
+        "type": "비즈니스 로직 결함 (음수 금액 우회)",
+        "cwe": "CWE-20",
+        "severity": "HIGH",
+        "lines": [50, 57, 58, 64, 69, 70],
+        "affected_code": "if (usersDB[fromAccount].balance < amount) { ... }\nusersDB[fromAccount].balance -= amount;\nusersDB[toAccount].balance += amount;",
+        "description": "이체 금액(amount)에 대한 음수 값 검증이 없어, 음수 금액을 전송하면 발신 계좌의 잔액이 오히려 증가하고 수신 계좌의 잔액이 감소하는 논리적 결함이 발생함.",
+        "isms_p_violation": "2.6.6 보안 취약점 관리 - 입력값 검증",
+        "exploit_scenario": "공격자가 amount를 -1000000으로 설정하면, fromAccount 잔액이 1000000 증가하고 toAccount 잔액이 1000000 감소하여 사실상 역방향 이체가 됨."
+      },
+      {
+        "id": "VULN-005",
+        "type": "하드코딩된 관리자 자격증명",
+        "cwe": "CWE-798",
+        "severity": "HIGH",
+        "lines": [8, 9],
+        "affected_code": "\"admin\": { passwordHash: \"21232f297a57a5a743894a0e4a801fc3\", balance: 5000000 }",
+        "description": "관리자 계정의 비밀번호 해시가 소스 코드에 하드코딩되어 있으며, 해당 해시(21232f...)는 'admin'의 MD5 해시로 즉시 크래킹 가능함.",
+        "isms_p_violation": "2.7.1 암호 통제 - 비밀번호 복잡도 및 관리 정책 준수",
+        "exploit_scenario": "공격자가 소스 코드를 열람하거나 해시를 탈취하면, 'admin/admin'으로 즉시 관리자 로그인이 가능하여 전체 시스템을 장악할 수 있음."
+      },
+      {
+        "id": "VULN-006",
+        "type": "안전하지 않은 인증 토큰 생성",
+        "cwe": "CWE-330",
+        "severity": "MEDIUM",
+        "lines": [23],
+        "affected_code": "res.json({ success: true, token: `fake-jwt-token-for-${username}` });",
+        "description": "JWT 토큰이 아닌 예측 가능한 문자열 패턴(fake-jwt-token-for-{username})으로 토큰을 생성하여, 타 사용자의 토큰을 손쉽게 위조할 수 있음.",
+        "isms_p_violation": "2.6.1 접근 통제 - 안전한 세션 관리",
+        "exploit_scenario": "공격자가 'fake-jwt-token-for-admin' 문자열을 직접 생성하여 관리자로 위장 접근 가능."
+      },
+      {
+        "id": "VULN-007",
+        "type": "부적절한 오류 처리 (정보 노출)",
+        "cwe": "CWE-209",
+        "severity": "LOW",
+        "lines": [38, 39],
+        "affected_code": "res.status(500).json({ error: \"Calculation failed\" });",
+        "description": "eval 실행 실패 시 에러 메시지가 일반적이나, 스택 트레이스 등 상세 정보가 노출될 가능성이 있음. 프로덕션 환경에서는 상세 오류를 숨겨야 함.",
+        "isms_p_violation": "2.6.6 보안 취약점 관리 - 에러 처리 정보 노출 최소화",
+        "exploit_scenario": "공격자가 의도적으로 에러를 유발하여 서버의 내부 구조나 스택 정보를 수집할 수 있음."
+      },
+      {
+        "id": "VULN-008",
+        "type": "인증 실패 응답 차이 (사용자 열거)",
+        "cwe": "CWE-204",
+        "severity": "LOW",
+        "lines": [22, 24, 25],
+        "affected_code": "if (usersDB[username] && usersDB[username].passwordHash === hash) { ... } else { res.status(401)... }",
+        "description": "아이디 존재 여부와 비밀번호 오류를 구분하지 않는 것처럼 보이나, usersDB[username] 참조 시 타이밍 차이로 인해 사용자 존재 여부를 열거할 수 있음.",
+        "isms_p_violation": "2.5.1 사용자 계정 관리 - 계정 정보 유출 방지",
+        "exploit_scenario": "공격자가 응답 시간 차이를 측정하여 유효한 사용자 이름 목록을 수집한 후 비밀번호 크래킹에 활용할 수 있음."
+      },
+      {
+        "id": "VULN-009",
+        "type": "잔액 부족 검증 우회 (경쟁 조건)",
+        "cwe": "CWE-362",
+        "severity": "HIGH",
+        "lines": [60, 64, 65, 66, 69, 70],
+        "affected_code": "if (usersDB[fromAccount].balance < amount) { return res.status(400)... }\nusersDB[fromAccount].balance -= amount;",
+        "description": "잔액 확인과 차감이 원자적(atomic)으로 처리되지 않아, 동시 요청(Race Condition) 시 잔액 부족 검증을 우회하여 초과 인출이 가능함.",
+        "isms_p_violation": "2.6.6 보안 취약점 관리 - 동시성 처리 안전성 확보",
+        "exploit_scenario": "공격자가 동시에 10개의 이체 요청을 보내면, 잔액 검증이 모두 통과하여 잔액보다 훨씬 많은 금액을 인출할 수 있음 (TOCTOU 공격)."
+      },
+      {
+        "id": "VULN-010",
+        "type": "입력값 타입 검증 부재",
+        "cwe": "CWE-20",
+        "severity": "MEDIUM",
+        "lines": [50, 60],
+        "affected_code": "const { fromAccount, toAccount, amount } = req.body;",
+        "description": "amount, fromAccount, toAccount 등의 필드에 대한 타입 검증이 전혀 없어, 문자열, 객체, 배열 등 예상치 못한 타입이 주입되면 예측 불가능한 동작이 발생할 수 있음.",
+        "isms_p_violation": "2.6.6 보안 취약점 관리 - 입력값 유효성 검사",
+        "exploit_scenario": "공격자가 amount에 문자열 '0'을 전달하면 문자열 비교로 인해 잔액 검증이 우회되거나, 객체를 전달하여 프로토타입 오염 공격을 시도할 수 있음."
+      }
+    ]
+  },
+  {
+    "file_path": "vuln-test-app/advanced_logic_api.js",
+    "description": "다단계 상태 기반 권한 검증 및 함정 코드가 포함된 고급 테스트 API",
+    "vulnerabilities": [
+      {
+        "id": "VULN-011",
+        "type": "상태 기반 권한 우회 (Broken Access Control)",
+        "cwe": "CWE-639",
+        "severity": "CRITICAL",
+        "lines": [68, 69, 70, 71],
+        "affected_code": "if (session && session.canResetPassword) {\n  usersDB[targetUser].password = newPassword;\n}",
+        "description": "비밀번호 초기화 요청 시 세션에 '초기화 가능' 권한이 있는지는 확인하지만, 그 권한이 타겟 유저(targetUser)에 대한 것인지 확인하지 않아 타인의 비밀번호를 무단으로 변경할 수 있음.",
+        "isms_p_violation": "2.6.1 접근 통제 - 사용자 인증 및 권한 부여 정책 수립",
+        "exploit_scenario": "공격자가 자신의 계정으로 비밀번호 초기화 토큰을 받아 인증한 뒤(canResetPassword=true 획득), 최종 변경 요청에서 targetUser를 'admin'으로 변조하여 전송하면 관리자 계정을 탈취할 수 있음."
+      }
+    ]
+  }
+]

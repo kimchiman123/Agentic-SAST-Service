@@ -1,0 +1,133 @@
+{
+  "method": "B (멀티 에이전트, Nano+Mini, CoT)",
+  "models": {
+    "discovery": "gpt-5.4-nano",
+    "analysis": "gpt-5.4-mini"
+  },
+  "tokens": {
+    "nano": {
+      "prompt_tokens": 3502,
+      "completion_tokens": 379,
+      "total_tokens": 3881
+    },
+    "mini": {
+      "prompt_tokens": 2376,
+      "completion_tokens": 1885,
+      "total_tokens": 4261
+    },
+    "total_tokens": 8142
+  },
+  "time_seconds": 18.66,
+  "findings_count": 5,
+  "findings": [
+    {
+      "file_name": "advanced_logic_api.js",
+      "type": "권한 검증 누락으로 인한 비인가 비밀번호 변경",
+      "severity": "CRITICAL",
+      "lines": [
+        47,
+        54,
+        61,
+        66,
+        67
+      ],
+      "title": "세션 권한만 확인하고 대상 사용자 일치 검증을 누락한 비밀번호 재설정 우회",
+      "description": "비밀번호 초기화 흐름에서 reset-verify 단계는 토큰이 유효하면 sessionId에 canResetPassword 권한을 부여합니다. 그러나 reset-password 단계에서는 session.canResetPassword만 확인할 뿐, 해당 세션의 소유자(session.owner)와 실제로 변경하려는 대상 사용자(targetUser)가 동일한지 검증하지 않습니다. 그 결과, 공격자는 자신의 세션에 재설정 권한만 확보하면 다른 사용자의 계정 비밀번호까지 임의로 변경할 수 있습니다.",
+      "exploit_scenario": "공격자는 /api/auth/reset-request로 자신 또는 임의 계정의 토큰을 발급받고, /api/auth/reset-verify로 특정 sessionId에 canResetPassword 상태를 부여합니다. 이후 /api/auth/reset-password에 그 sessionId와 관리자 계정(admin)을 targetUser로 넣어 호출하면, 대상 계정 소유자 확인 없이 admin의 비밀번호가 공격자가 지정한 값으로 변경됩니다. 이후 공격자는 변경된 비밀번호로 관리자 계정에 로그인해 계정 장악, 데이터 유출, 권한 상승을 수행할 수 있습니다.",
+      "decision_tree": [
+        "reset-request는 username 기준으로 토큰을 생성해 resetTokens[token] = username 형태로 저장한다.",
+        "reset-verify는 토큰 존재만 확인하고 sessions[sessionId]에 canResetPassword와 owner를 부여한다.",
+        "reset-password는 sessions[sessionId]가 존재하고 canResetPassword가 true인지 만 확인한다.",
+        "이 단계에서 session.owner와 targetUser의 일치 여부를 검증하지 않는다.",
+        "따라서 권한이 있는 세션만 확보하면 임의의 targetUser 비밀번호를 변경할 수 있다.",
+        "결론적으로 인증된 비밀번호 재설정 권한이 계정 소유자 검증 없이 타 계정에 전이되는 비인가 수정 취약점이다."
+      ]
+    },
+    {
+      "file_name": "payment_api.js",
+      "type": "Cryptographic Weakness",
+      "severity": "HIGH",
+      "lines": [
+        10,
+        13
+      ],
+      "title": "취약한 MD5 해시로 비밀번호를 검증함",
+      "description": "로그인 처리에서 비밀번호를 MD5로 해시한 뒤 저장된 값과 비교합니다. MD5는 충돌 공격과 빠른 브루트포스에 매우 취약하여, 비밀번호 추측 및 레인보우 테이블 공격에 쉽게 노출됩니다. 또한 솔트(salt)와 느린 KDF(bcrypt, scrypt, Argon2 등)가 없어 계정 탈취 위험이 큽니다.",
+      "exploit_scenario": "공격자는 유출된 해시값이나 로그인 응답 차이를 기반으로 비밀번호 후보를 빠르게 대입할 수 있습니다. 특히 admin 계정의 비밀번호가 약하거나 이미 알려진 경우, MD5의 취약성을 이용해 손쉽게 관리자 계정을 탈취할 수 있습니다.",
+      "decision_tree": [
+        "로그인 입력값 password가 서버에서 직접 처리되는지 확인한다.",
+        "password에 대해 MD5 해시를 생성하는지 확인한다.",
+        "MD5가 암호 저장에 부적절한 빠른 해시인지 판단한다.",
+        "솔트, 반복 횟수, 안전한 KDF 사용 여부가 없는지 확인한다.",
+        "따라서 비밀번호 검증이 공격에 취약하다고 결론낸다."
+      ]
+    },
+    {
+      "file_name": "payment_api.js",
+      "type": "Code Injection",
+      "severity": "CRITICAL",
+      "lines": [
+        20,
+        23
+      ],
+      "title": "사용자 입력을 eval()에 전달하여 임의 코드 실행 위험이 발생함",
+      "description": "mathFormula가 외부 입력인데도 검증 없이 eval()에 그대로 전달됩니다. 이는 단순 계산식 처리로 보이더라도, 공격자가 자바스크립트 코드를 주입해 서버 컨텍스트에서 임의 코드를 실행할 수 있게 만드는 전형적인 코드 인젝션 취약점입니다.",
+      "exploit_scenario": "공격자는 mathFormula에 계산식 대신 process.env 출력, 파일 읽기, 프로세스 종료, 또는 추가 코드 실행을 유도하는 문자열을 넣을 수 있습니다. 이로 인해 서버 내부 정보 유출, 서비스 장애, 확장된 원격 코드 실행으로 이어질 수 있습니다.",
+      "decision_tree": [
+        "요청 본문에서 mathFormula가 사용자 제어 입력인지 확인한다.",
+        "해당 입력이 별도 검증 없이 eval()로 전달되는지 확인한다.",
+        "eval()가 입력 문자열을 코드로 해석해 실행하는지 판단한다.",
+        "서버 권한으로 임의 코드 실행이 가능한지 확인한다.",
+        "따라서 원격 코드 실행 수준의 코드 인젝션으로 분류한다."
+      ]
+    },
+    {
+      "file_name": "payment_api.js",
+      "type": "Broken Access Control / IDOR",
+      "severity": "CRITICAL",
+      "lines": [
+        30,
+        33,
+        42,
+        43
+      ],
+      "title": "송금 대상 계좌와 인증 사용자 간 검증이 없어 타인 계좌 이체가 가능함",
+      "description": "transfer API는 헤더의 x-user-id를 통해 인증 사용자를 가져온다고 가정하지만, 실제로 fromAccount가 해당 사용자와 일치하는지 확인하지 않습니다. 그 결과 공격자는 본인이 소유하지 않은 계좌를 fromAccount로 지정해 잔액을 임의로 이체할 수 있습니다. 이는 직접 객체 참조(IDOR)와 접근통제 실패의 결합입니다.",
+      "exploit_scenario": "공격자는 로그인한 상태에서 x-user-id와 무관하게 body의 fromAccount에 피해자 계좌를 넣고 toAccount를 자신의 계좌로 지정해 송금을 요청할 수 있습니다. 서버는 소유권을 확인하지 않으므로 피해자 계좌의 잔액이 공격자 계좌로 이동합니다.",
+      "decision_tree": [
+        "인증된 사용자 식별값 loggedInUser가 존재하는지 확인한다.",
+        "송금 요청의 fromAccount가 loggedInUser 소유인지 검증하는지 확인한다.",
+        "소유권 비교나 권한 체크가 없음을 확인한다.",
+        "계좌 식별자가 요청 본문에서 직접 지정되는지 확인한다.",
+        "따라서 타인 계좌를 대상으로 한 IDOR/권한 우회가 가능하다고 결론낸다."
+      ]
+    },
+    {
+      "file_name": "payment_api.js",
+      "type": "Business Logic Flaw",
+      "severity": "HIGH",
+      "lines": [
+        35,
+        42,
+        43
+      ],
+      "title": "음수 금액 검증 부재로 잔액 조작 및 역이체가 가능함",
+      "description": "amount가 음수인지 확인하지 않기 때문에, 사용자는 -10000 같은 값을 보내 비정상적인 잔액 변화를 유발할 수 있습니다. 현재 로직은 fromAccount.balance -= amount, toAccount.balance += amount로 계산하므로 음수 금액이 들어오면 출금과 입금의 의미가 뒤집혀 계좌 잔액을 임의로 조작할 수 있습니다.",
+      "exploit_scenario": "공격자는 자신 계좌와 피해자 계좌를 지정한 뒤 amount에 음수를 넣어 요청합니다. 그러면 자신의 계좌는 증가하고 피해자 계좌는 감소하는 효과가 발생해, 시스템이 허용하지 말아야 할 비정상적인 자산 이동이 가능해집니다.",
+      "decision_tree": [
+        "amount가 외부 입력이며 숫자 검증만으로 충분한지 확인한다.",
+        "음수, 0, 비정상적으로 큰 값에 대한 검증이 없는지 확인한다.",
+        "잔액 계산식이 amount의 부호에 따라 역전될 수 있는지 확인한다.",
+        "balance < amount 체크가 음수에서 무력화되는지 확인한다.",
+        "따라서 금액 검증 실패로 인한 비즈니스 로직 우회가 성립한다고 판단한다."
+      ]
+    }
+  ],
+  "filtered_files": [
+    "safe_utils.js"
+  ],
+  "analyzed_files": [
+    "advanced_logic_api.js",
+    "payment_api.js"
+  ]
+}

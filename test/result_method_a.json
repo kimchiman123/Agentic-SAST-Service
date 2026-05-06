@@ -1,0 +1,72 @@
+{
+  "method": "A (단일 에이전트, Mini Only, No-CoT)",
+  "model": "gpt-5.4-mini",
+  "tokens": {
+    "prompt_tokens": 2832,
+    "completion_tokens": 538,
+    "total_tokens": 3370
+  },
+  "time_seconds": 5.29,
+  "findings_count": 5,
+  "findings": [
+    {
+      "type": "Broken Access Control",
+      "severity": "HIGH",
+      "file_name": "advanced_logic_api.js",
+      "lines": [
+        61,
+        64,
+        65
+      ],
+      "title": "비밀번호 초기화 권한을 타 사용자 계정에 적용할 수 있음",
+      "description": "reset-password 엔드포인트는 세션에 비밀번호 변경 권한이 있는지만 확인하고, 해당 세션의 소유자와 실제 변경 대상(targetUser)이 일치하는지 검증하지 않습니다. 공격자는 유효한 초기화 토큰을 이용해 권한이 부여된 세션을 만든 뒤 임의의 targetUser 비밀번호를 변경할 수 있습니다."
+    },
+    {
+      "type": "Use of Hard-coded Cryptographic Hash",
+      "severity": "MEDIUM",
+      "file_name": "payment_api.js",
+      "lines": [
+        12,
+        13,
+        15
+      ],
+      "title": "취약한 MD5 해시를 사용한 비밀번호 검증",
+      "description": "로그인 로직이 비밀번호 검증에 MD5를 사용합니다. MD5는 충돌 및 사전공격에 취약하여 계정 보호에 부적절하며, 비밀번호 저장/검증 용도로는 안전하지 않습니다."
+    },
+    {
+      "type": "Code Injection",
+      "severity": "CRITICAL",
+      "file_name": "payment_api.js",
+      "lines": [
+        20,
+        25
+      ],
+      "title": "사용자 입력을 eval에 전달하는 코드 실행 취약점",
+      "description": "mathFormula 값을 검증 없이 eval에 전달하므로 공격자가 임의의 JavaScript 코드를 실행할 수 있습니다. 이 취약점은 서버 측 원격 코드 실행, 데이터 유출, 서비스 장애로 이어질 수 있습니다."
+    },
+    {
+      "type": "Broken Access Control",
+      "severity": "HIGH",
+      "file_name": "payment_api.js",
+      "lines": [
+        31,
+        35,
+        42,
+        46
+      ],
+      "title": "출금 계좌 소유자 검증이 없어 타인 계좌 이체 가능",
+      "description": "이체 요청에서 loggedInUser와 fromAccount의 일치 여부를 확인하지 않아, 인증된 사용자가 타인의 계좌를 출금 계좌로 지정해 자금을 이체할 수 있습니다. 이는 IDOR/권한 검증 실패에 해당합니다."
+    },
+    {
+      "type": "Input Validation",
+      "severity": "HIGH",
+      "file_name": "payment_api.js",
+      "lines": [
+        35,
+        46
+      ],
+      "title": "음수 금액 검증 부재로 잔액 조작 가능",
+      "description": "amount가 음수인지 검사하지 않아 음수 이체를 보내면 출금 계좌 잔액이 증가하고 수신 계좌 잔액이 감소하는 논리 오류가 발생합니다. 이를 통해 잔액을 비정상적으로 조작할 수 있습니다."
+    }
+  ]
+}
