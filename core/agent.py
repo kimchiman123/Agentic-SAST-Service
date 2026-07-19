@@ -7,7 +7,7 @@ import os
 import re
 import json
 import concurrent.futures
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
@@ -34,17 +34,18 @@ class FindingModel(BaseModel):
     rule_id: Optional[str] = Field(default=None, description="semgrep 규칙 ID")
     is_true_positive: bool = Field(default=True, description="오탐 여부")
     false_positive_reason: Optional[str] = Field(default=None, description="오탐일 경우 그 사유")
-    severity: str = Field(default="INFO", description="CRITICAL | HIGH | MEDIUM | LOW | INFO")
+    severity: Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] = Field(default="INFO", description="심각도 수준")
     title: str = Field(default="제목 없음", description="취약점 제목 (한국어)")
     description: str = Field(default="", description="취약점 상세 설명 (한국어)")
-    vulnerability_type: Optional[str] = Field(default=None, description="IDOR | Race Condition | Logic Bypass 등")
+    vulnerability_type: Literal["Code Injection", "IDOR", "Race Condition", "Logic Bypass", "Weak Password Hashing", "CSRF", "Supply Chain", "Other"] = Field(default="Other", description="취약점 분류 유형")
     file_path: Optional[str] = Field(default=None, description="취약점이 위치한 파일 경로")
     taint_analysis: Optional[str] = Field(default=None, description="데이터 흐름 추적 설명")
     exploit_scenario: str = Field(default="", description="상세 공격 시나리오")
     affected_code: str = Field(default="", description="취약한 코드 라인")
     remediation_code: str = Field(default="", description="수정된 안전한 코드")
     remediation_description: str = Field(default="", description="수정 방법 설명 (한국어)")
-    isms_p_violation: Optional[str] = Field(default=None, description="ISMS-P 위반 사항")
+    isms_p_violation: Optional[str] = Field(default=None, description="ISMS-P 인증기준 조항 코드 (예: '2.5.3', '2.6.2') 또는 기술적 보안 가이드 항목 코드 (예: 'U-13', 'D-08'). 오직 해당 표준 코드/번호만 입력하십시오.")
+    isms_p_description: Optional[str] = Field(default=None, description="위 매핑된 ISMS-P 조항에 따른 상세한 법적/기술적 위반 사항 및 보완 권고 설명 (한국어)")
     decision_tree: List[str] = Field(default_factory=list, description="취약점 판별부터 규정 매핑까지의 논리적 흐름 (최대 4~5단계의 간결한 문장 배열)")
 
 class OutputModel(BaseModel):

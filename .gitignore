@@ -7,3 +7,9 @@ sast_report.pdf
 sast_report.html
 mini_project5/
 temp/
+
+# Generated scan and evaluation artifacts
+reports/*.json
+reports/*.pdf
+reports/*.xlsx
+test/*_results.csv

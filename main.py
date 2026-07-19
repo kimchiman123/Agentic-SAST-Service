@@ -143,12 +143,18 @@ def run_pipeline(target_path: str) -> None:
     # 1. 파일 경로 설정
     pdf_output = os.path.join(reports_dir, f"{base_filename}.pdf")
     xlsx_output = os.path.join(reports_dir, f"{base_filename}.xlsx")
+    json_output = os.path.join(reports_dir, f"{base_filename}.json")
 
     # 2. PDF 생성 (내부적으로 HTML 변환 후 PDF 저장)
     exported_pdf_path = export_pdf(report_md_content, pdf_output)
 
     # 3. XLSX 생성 (상세 취약점 내역)
     exported_xlsx_path = export_xlsx(all_findings, xlsx_output)
+
+    # 4. JSON 생성 (일관성 비교 및 분석용 원본 데이터 백업)
+    import json
+    with open(json_output, "w", encoding="utf-8") as f:
+        json.dump(all_findings, f, indent=2, ensure_ascii=False)
 
     total_elapsed = time.time() - pipeline_start
 
@@ -158,6 +164,7 @@ def run_pipeline(target_path: str) -> None:
     print(f"    총 소요 시간:    {_fmt_elapsed(total_elapsed)}")
     print(f"    - PDF 리포트:  {exported_pdf_path}")
     print(f"    - XLSX 리포트: {exported_xlsx_path}")
+    print(f"    - JSON 데이터:  {json_output}")
     print(f"{'=' * 60}")
 
 
