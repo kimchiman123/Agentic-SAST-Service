@@ -202,10 +202,11 @@ class OpenAIAgent:
         osv_vulns: Optional[List[Dict[str, Any]]] = None,
         *,
         target_root: str,
+        api_key: Optional[str] = None,
         limits: Optional[AnalysisLimits] = None,
         enable_web_search: bool = False,
     ) -> None:
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("[!] OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
 

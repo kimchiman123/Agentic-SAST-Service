@@ -11,3 +11,6 @@ langchain-openai
 langchain-core
 pydantic
 ddgs
+streamlit
+portalocker
+pywin32; sys_platform == "win32"

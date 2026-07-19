@@ -7,7 +7,7 @@ load_dotenv()
 
 # Agentic-SAST-Service 경로 추가
 base_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(base_dir)
+project_root = os.path.dirname(os.path.dirname(base_dir))
 sys.path.append(project_root)
 
 from core.isms_rag import ISMSKnowledgeBase
@@ -110,7 +110,8 @@ def run_evaluation():
     print(df)
 
     # 파일로 저장
-    output_path = os.path.join(base_dir, "rag_evaluation_augmented_results.csv")
+    output_path = os.path.join(base_dir, "results", "rag_evaluation_augmented_results.csv")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     df.to_csv(output_path, index=False)
     print(f"\n[+] 평가 결과가 {output_path}에 저장되었습니다.")
 

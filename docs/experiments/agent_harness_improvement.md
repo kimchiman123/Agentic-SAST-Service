@@ -222,5 +222,5 @@ usersDB[toAccount].balance += amount;
 
 본 테스트 하네스 도입 및 아키텍처 개편을 통해 AI의 생성 확률적 무작위성을 스키마 제약과 디코딩 파라미터(온도 고정)로 성공적으로 조율했습니다. 회귀를 방지하기 위해 다음 규칙을 유지해야 합니다:
 
-1. **상시 CI 회귀 테스트 적용**: 프롬프트의 미세한 수정이 가해질 때마다 이 `test/run_consistency_test.py` 하네스를 구동하여 자카드 유사도 80% 이상, ISMS-P 일치도 80% 이상을 유지하는지 지속 확인해야 합니다.
+1. **상시 CI 회귀 테스트 적용**: 프롬프트의 미세한 수정이 가해질 때마다 이 `benchmarks/agent_consistency/run_consistency_test.py` 하네스를 구동하여 자카드 유사도 80% 이상, ISMS-P 일치도 80% 이상을 유지하는지 지속 확인해야 합니다.
 2. **신규 패턴 확장 시 Literal 제약 추가**: `core/agent.py` 내의 `FindingModel` 스펙에 수정을 가할 경우, 분류 목록(`vulnerability_type`)에 해당하는 Literal 목록에 새 타입을 추가하여 엄격한 형식을 강제해야 합니다.

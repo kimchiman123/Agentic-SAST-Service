@@ -27,23 +27,26 @@ if sys.stderr.encoding != 'utf-8':
 
 # 프로젝트 루트 경로 추가
 base_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(base_dir)
+project_root = os.path.dirname(os.path.dirname(base_dir))
 sys.path.append(project_root)
 
 # 환경 변수 로드
 load_dotenv(os.path.join(project_root, ".env"))
 
-from main import run_pipeline
+from core.pipeline import run_pipeline
 
 def get_latest_json_files(reports_dir, count=4):
     """reports 디렉토리에서 가장 최근에 생성된 JSON 파일 리스트를 반환합니다."""
     if not os.path.exists(reports_dir):
         return []
 
-    files = [
-        os.path.join(reports_dir, f) for f in os.listdir(reports_dir)
-        if f.endswith(".json") and not f.startswith("consistency_")
-    ]
+    files = []
+    for root, _dirs, names in os.walk(reports_dir):
+        files.extend(
+            os.path.join(root, name)
+            for name in names
+            if name.endswith(".json") and not name.startswith("consistency_")
+        )
     # 생성 시간 순 정렬 (최신 순)
     files.sort(key=os.path.getmtime, reverse=True)
     return files[:count]
@@ -296,14 +299,14 @@ AI 에이전트 아키텍처 제약사항 적용 전과 적용 후의 5대 핵�
 
 본 테스트 하네스 도입 및 아키텍처 개편을 통해 AI의 생성 확률적 무작위성을 스키마 제약과 디코딩 파라미터(온도 고정)로 성공적으로 조율했습니다. 회귀를 방지하기 위해 다음 규칙을 유지해야 합니다:
 
-1. **상시 CI 회귀 테스트 적용**: 프롬프트의 미세한 수정이 가해질 때마다 이 `test/run_consistency_test.py` 하네스를 구동하여 자카드 유사도 80% 이상, ISMS-P 일치도 80% 이상을 유지하는지 지속 확인해야 합니다.
+1. **상시 CI 회귀 테스트 적용**: 프롬프트의 미세한 수정이 가해질 때마다 이 `benchmarks/agent_consistency/run_consistency_test.py` 하네스를 구동하여 자카드 유사도 80% 이상, ISMS-P 일치도 80% 이상을 유지하는지 지속 확인해야 합니다.
 2. **신규 패턴 확장 시 Literal 제약 추가**: `core/agent.py` 내의 `FindingModel` 스펙에 수정을 가할 경우, 분류 목록(`vulnerability_type`)에 해당하는 Literal 목록에 새 타입을 추가하여 엄격한 형식을 강제해야 합니다.
 """
     return report_md
 
 def run_test():
-    target = os.path.join(project_root, "test", "vuln-test-app")
-    reports_dir = os.path.join(project_root, "reports")
+    target = os.path.join(project_root, "tests", "fixtures", "vuln-test-app")
+    reports_dir = os.path.join(project_root, "reports", "generated")
 
     print("=" * 60)
     print("  구조 개편 후 AI Agent 일관성 검증 테스트 시작 (하네스 작동)")
@@ -325,7 +328,7 @@ def run_test():
     # 1. 1차 실행 (개선 후)
     print("\n[개선 후 1차 실행 시작]")
     start_time = time.time()
-    run_pipeline(target)
+    first_result = run_pipeline(target)
     elapsed_1 = time.time() - start_time
     elapsed_times.append(f"{elapsed_1:.1f}초")
     print(f"[+] 개선 후 1차 실행 완료 (소요 시간: {elapsed_times[0]})\n")
@@ -337,13 +340,13 @@ def run_test():
     # 2. 2차 실행 (개선 후)
     print("\n[개선 후 2차 실행 시작]")
     start_time = time.time()
-    run_pipeline(target)
+    second_result = run_pipeline(target)
     elapsed_2 = time.time() - start_time
     elapsed_times.append(f"{elapsed_2:.1f}초")
     print(f"[+] 개선 후 2차 실행 완료 (소요 시간: {elapsed_times[1]})\n")
 
     # 실행 완료 후, 신규 JSON 2개와 직전 JSON 2개를 가져옴
-    all_json_files = get_latest_json_files(reports_dir, 4)
+    all_json_files = [second_result.artifacts.json, first_result.artifacts.json, *pre_run_files]
     if len(all_json_files) < 4:
         print(f"[!] 오류: 개선 전후 비교를 위한 JSON 파일 개수가 부족합니다. (발견된 파일 수: {len(all_json_files)})")
         return
@@ -388,7 +391,7 @@ def run_test():
     )
 
     # 최종 마크다운 보고서 저장
-    report_path = os.path.join(reports_dir, "agent_harness_improvement.md")
+    report_path = os.path.join(os.path.dirname(second_result.artifacts.json), "agent_harness_improvement.md")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report_content)
 

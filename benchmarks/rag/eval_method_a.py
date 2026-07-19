@@ -10,9 +10,10 @@ import json
 import time
 
 from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+load_dotenv(os.path.join(project_root, ".env"))
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, project_root)
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -105,7 +106,7 @@ def run_method_a(target_dir):
 
 
 if __name__ == "__main__":
-    target = os.path.join(os.path.dirname(__file__), "vuln-test-app")
+    target = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "tests", "fixtures", "vuln-test-app")
     print("[*] 방식 A (단일 에이전트, No-CoT) 실행 중...")
     result = run_method_a(target)
     
@@ -118,7 +119,9 @@ if __name__ == "__main__":
     print(json.dumps(result["findings"], indent=2, ensure_ascii=False))
     
     # 결과 저장
-    output_path = os.path.join(os.path.dirname(__file__), "result_method_a.json")
+    results_dir = os.path.join(os.path.dirname(__file__), "results")
+    os.makedirs(results_dir, exist_ok=True)
+    output_path = os.path.join(results_dir, "result_method_a.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
     print(f"\n[+] 결과 저장: {output_path}")

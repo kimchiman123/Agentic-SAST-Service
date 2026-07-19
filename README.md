@@ -80,7 +80,7 @@
 | **Agent Tools** | MCP Tools (read_source, search_code) | 에이전트의 자율적 코드 탐색 도구 |
 | **RAG** | ChromaDB + PyMuPDF + openpyxl | ISMS-P 규정 문서의 벡터 검색 |
 | **SCA** | OSV.dev API | npm 의존성 패키지 취약점 검출 |
-| **웹 검색** | DuckDuckGo Search | 최신 CVE/PoC 동향 실시간 수집 |
+| **웹 검색** | DDGS (기본 비활성) | 명시적으로 허용한 CVE/CWE 조회 |
 | **리포트** | Markdown + HTML/PDF (wkhtmltopdf) | 전문가 수준의 프리미엄 분석 보고서 |
 | **컨테이너** | Docker / Docker Compose | 재현 가능한 런타임 환경 보장 |
 
@@ -154,14 +154,14 @@ LangGraph의 `StateGraph`를 사용한 **3단계 멀티 에이전트 파이프�
 - **목적:** 안전한 코드는 빠르게 스킵하여 토큰 비용과 분석 시간을 절감합니다.
 
 #### Stage 2: Deep Analysis (mini 모델 + MCP Tools)
-- 더 강력한 모델(`gpt-5.4-mini`)이 Chain-of-Thought(CoT) 추론을 수행합니다.
+- 더 강력한 모델(`gpt-5.4-mini`)이 승인된 조사 계획에 따라 근거를 수집합니다.
 - Agent는 **MCP 도구**(`read_source`, `search_code`)를 자율적으로 호출하여 코드를 직접 읽고 함수 간 데이터 흐름을 추적합니다.
 - 대용량 파일(15,000자 초과)은 **Lazy Loading** 전략을 사용하여 헤더와 함수 시그니처만 먼저 제공한 뒤, Agent가 도구를 사용해 의심 구간을 직접 탐색합니다.
 - 한 번에 읽을 수 있는 코드를 300줄로 제한하여 컨텍스트 윈도우 오버플로우를 방지합니다.
 
 #### Stage 3: Final Report + ISMS-P 매핑
-- Agent의 CoT 추론 내용을 기반으로 **ChromaDB의 ISMS-P 벡터 DB를 검색**(RAG)하여, 발견된 취약점이 위반하는 인증기준 조항을 자동으로 매핑합니다.
-- 필요시 **DuckDuckGo 웹 검색**을 통해 최신 CVE/PoC 동향을 수집하여 분석에 반영합니다.
+- 조사 계획의 RAG 쿼리를 기반으로 **ChromaDB의 ISMS-P 벡터 DB를 검색**하여 인증기준 조항을 자동으로 매핑합니다.
+- 외부 검색은 기본 비활성이며, 코드에서 명시적으로 활성화한 경우에도 알려진 CVE/CWE 또는 OSV 패키지만 조회합니다.
 - 최종 결과를 Pydantic 구조화 출력으로 정리합니다. LLM 응답 파싱 실패 시 JSON 블록을 정규표현식으로 추출하는 2단계 Fallback 로직이 적용되어 있습니다.
 
 ### Phase 4. ISMS-P RAG 지식베이스
@@ -184,18 +184,18 @@ LangGraph의 `StateGraph`를 사용한 **3단계 멀티 에이전트 파이프�
 
 ---
 
-## 📁 프로젝트 구조
+## 프로젝트 구조
 
 ```
 Agentic-SAST-Service/
-├── main.py                     # CLI 진입점 및 파이프라인 오케스트레이터
-├── Dockerfile                  # 컨테이너 이미지 정의
-├── docker-compose.yml          # 볼륨 마운트 및 환경변수 통합 실행
+├── main.py                     # 얇은 CLI 진입점
+├── run_ui.bat                  # localhost 전용 UI 실행기
 ├── requirements.txt            # Python 의존성 목록
-├── scan_project.bat            # Windows 로컬 실행 스크립트
-│
 ├── core/                       # 핵심 분석 엔진
+│   ├── pipeline.py             # CLI/UI 공용 파이프라인 서비스
+│   ├── config.py               # API 키 검증 및 선택적 저장
 │   ├── agent.py                # LangGraph StateGraph 에이전트 (분석 핵심)
+│   ├── path_policy.py          # 스캔 루트 및 민감 파일 경계 정책
 │   ├── scanner.py              # Semgrep Docker 실행 및 결과 파싱
 │   ├── context_builder.py      # 스마트 컨텍스트 추출 (코드 스니펫 + 핵심 파일)
 │   ├── isms_rag.py             # ChromaDB 기반 ISMS-P RAG 지식베이스
@@ -203,8 +203,11 @@ Agentic-SAST-Service/
 │   ├── state.py                # LangGraph 상태 모델 (TypedDict)
 │   └── tools/
 │       ├── osv_checker.py      # OSV.dev API 의존성 취약점 스캐너
-│       └── web_search.py       # DuckDuckGo 웹 검색 모듈
-│
+│       └── web_search.py       # 제한된 외부 보안 검색 모듈
+├── ui/                         # Streamlit 로컬 UI
+├── tests/                      # unit, integration, fixtures
+├── benchmarks/                 # RAG 및 agent consistency 평가
+├── docs/                       # architecture, experiments, plans
 ├── utils/                      # 리포트 생성 유틸리티
 │   ├── formatter.py            # 분석 결과 → 마크다운 변환 (보안 점수, 대시보드)
 │   └── pdf_exporter.py         # 마크다운 → HTML/PDF 변환 (프리미엄 CSS 디자인)
@@ -213,95 +216,61 @@ Agentic-SAST-Service/
 │   ├── ISMS-P 인증기준 안내서(2023.11.23).pdf
 │   └── ISMS-P_인증기준_세부점검항목.xlsx
 │
-└── reports/                    # 생성된 분석 리포트 저장 디렉토리
+└── reports/generated/{run-id}/ # 실행별 생성 산출물 (Git 제외)
 ```
 
 ---
 
-## 🚀 실행 방법
+## 실행 방법
 
 ### 사전 요구사항
 
-- **Docker Desktop** 이 설치되고 실행 중이어야 합니다 (Semgrep 스캐너 실행에 필요)
+- **Docker Desktop**이 설치되고 실행 중이어야 합니다 (Semgrep 컨테이너 실행)
 - **OpenAI API Key** 가 필요합니다
+- Python 3.11 이상과 `ripgrep`이 필요합니다
 
-### 방법 1. Docker Compose (권장)
+### 방법 1. 로컬 UI (권장)
 
 ```bash
-# 1. 프로젝트 클론
 git clone https://github.com/kimchiman123/Agentic-SAST-Service.git
 cd Agentic-SAST-Service
-
-# 2. 환경변수 설정
-echo "OPENAI_API_KEY=sk-your-key-here" > .env
-
-# 3. 스캔할 대상 프로젝트를 target_project/ 폴더에 배치
-cp -r /path/to/your/project ./target_project
-
-# 4. Docker로 분석 실행
-docker-compose up --build
-```
-
-리포트는 `./reports/` 폴더에 자동 저장됩니다.
-
-### 방법 2. Docker 직접 실행
-
-```bash
-# 이미지 빌드
-docker build -t agentic-sast-guardian .
-
-# 실행 (대상 경로와 리포트 경로를 마운트)
-docker run --rm \
-  -v "/path/to/your/project:/target" \
-  -v "$(pwd)/reports:/app/reports" \
-  --env-file .env \
-  agentic-sast-guardian --target /target
-```
-
-### 방법 3. 로컬 직접 실행 (Windows)
-
-```bash
-# 의존성 설치
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
-pip install semgrep
-
-# ripgrep 설치 (코드 검색 도구)
-# https://github.com/BurntSushi/ripgrep/releases
-
-# 실행
-python main.py --target ./vuln-test-app
+run_ui.bat
 ```
 
-또는 `scan_project.bat` 파일을 더블클릭하여 실행할 수 있습니다.
+브라우저에서 API 키와 대상 폴더를 입력합니다. 키는 기본적으로 현재 실행에만 사용되며, 사용자가 `이 기기에 저장 (.env)`를 선택한 경우에만 프로젝트 루트 `.env`에 저장됩니다. UI는 `127.0.0.1`에만 바인딩되며 원격 배포는 지원하지 않습니다.
+
+### 방법 2. CLI
+
+```bash
+copy .env.example .env
+# .env의 OPENAI_API_KEY 값을 설정한 뒤:
+python main.py --target C:\path\to\project
+```
+
+CLI는 `scan_project.bat`로도 실행할 수 있습니다.
 
 ---
 
-## 📊 산출물
+## 산출물
 
-실행이 완료되면 `reports/` 디렉토리에 다음 파일들이 생성됩니다.
+실행이 완료되면 충돌하지 않는 run-id 디렉터리에 결과가 생성됩니다.
 
 ```
 reports/
-├── {대상폴더명}_{YYYYMMDD_HHMMSS}.pdf     # 보안 분석 PDF 보고서 (대시보드 + 상세 분석)
-└── {대상폴더명}_{YYYYMMDD_HHMMSS}.xlsx    # 취약점 상세 내역 엑셀
+└── generated/{YYYYMMDD_HHMMSS}_{random}/
+    ├── {대상폴더명}.pdf 또는 .html
+    ├── {대상폴더명}.xlsx
+    └── {대상폴더명}.json
 ```
 
 PDF 리포트에는 **보안 점수(0-100)**, **등급별 통계 카드**, **ISMS-P 위반 현황 테이블**이 포함된 Executive Dashboard가 첫 페이지에 배치됩니다.
 
 ---
 
-## 📄 분석 사례
-
-이전에 AWS EKS 서버를 구축했던 프로젝트를 Agentic-SAST-Guardian으로 분석하여, 취약점과 개선점을 PDF 문서로 산출하였습니다.
-
-| 항목 | 내용 |
-|:---|:---|
-| **분석 대상 레포지토리** | [🔗 kimchiman123/mini_project5](https://github.com/kimchiman123/mini_project5) |
-| **분석 결과 PDF 보고서** | [📄 EKS_20260426_154728.pdf](reports/EKS_20260502_121225.pdf) |
-| **취약점 상세 내역 (Excel)** | [📊 EKS_20260426_154728.xlsx](reports/EKS_20260502_121225.xlsx) |
-
-> 해당 프로젝트는 Spring Boot 백엔드, React 프론트엔드, Nginx 리버스 프록시, Docker Compose 기반으로 구성된 AWS EKS 배포 서비스입니다.
-> SAST 분석을 통해 CORS 설정, SQL 인젝션, 컨테이너 권한 설정, OAuth 인증 흐름 등 다수의 보안 취약점이 탐지되었으며, 각 항목에 대한 ISMS-P 규정 매핑과 구체적인 수정 가이드가 보고서에 포함되어 있습니다.
+실험 기록과 과거 평가 결과는 `docs/experiments/`, 재현 가능한 입력과 baseline은 `benchmarks/`에서 확인할 수 있습니다.
 
 ---
 
@@ -312,7 +281,7 @@ PDF 리포트에는 **보안 점수(0-100)**, **등급별 통계 카드**, **ISM
 | 항목 | 설계 | 동작 | 효과 |
 |:---|:---|:---|:---|
 | **Discovery Filter** | 경량 모델(`gpt-5.4-nano`)로 1차 필터링 | 각 코드 컨텍스트를 사전 검토하여 안전한 코드는 스킵 | 불필요한 토큰 소비 차단 |
-| **Deep Analysis** | 고성능 모델(`gpt-5.4-mini`)로 2차 정밀 분석 | 필터를 통과한 의심 코드에만 CoT 추론 + MCP 도구 호출 | 비용 대비 분석 정확도 극대화 |
+| **Deep Analysis** | 고성능 모델(`gpt-5.4-mini`)로 2차 정밀 분석 | Planner의 조사 계획과 전역 예산 안에서만 도구 호출 | 비용 대비 분석 정확도 극대화 |
 
 ### 2. Lazy Loading (대용량 파일 처리)
 
@@ -321,11 +290,11 @@ PDF 리포트에는 **보안 점수(0-100)**, **등급별 통계 카드**, **ISM
 | **시그니처 우선 제공** | 15,000자 초과 파일은 상단 50줄 + 함수/클래스 시그니처만 전달 | Agent가 전체 구조를 파악한 뒤 의심 구간을 MCP 도구로 직접 탐색 | 컨텍스트 윈도우 포화 방지 |
 | **300줄 읽기 제한** | 한 번의 도구 호출당 최대 300줄로 제한 | 필요한 코드만 선별적으로 로드 | 토큰 낭비 없이 정밀 분석 수행 |
 
-### 3. CoT 기반 RAG 검색 (ISMS-P 매핑)
+### 3. 계획 기반 RAG 검색 (ISMS-P 매핑)
 
 | 항목 | 설계 | 동작 | 효과 |
 |:---|:---|:---|:---|
-| **CoT → 검색 쿼리** | Agent의 추론 결과를 RAG 검색 쿼리로 활용 | "비밀번호 일방향 암호화 미적용" 등 보안 키워드가 자동 포함 | 코드 텍스트 직접 검색 대비 매칭 정확도 향상 |
+| **계획 → 검색 쿼리** | Planner가 만든 제한된 RAG 쿼리를 활용 | 보안 가설과 확인 항목을 검색에 반영 | 코드 텍스트 직접 검색 대비 매칭 정확도 향상 |
 | **Query Expansion** | 보안 키워드 동의어를 자동 확장 | "SQL Injection" → "SQL 삽입", "입력값 검증" 등으로 확장 검색 | 한국어/영어 혼용 규정 문서에서도 높은 Recall 확보 |
 
 ### 4. 2단계 JSON 파싱 Fallback

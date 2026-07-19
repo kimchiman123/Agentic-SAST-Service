@@ -1,6 +1,6 @@
 """
 Long Context 방식 B: 멀티 에이전트 (Nano 필터링 + Mini CoT)
-- mini_project5 전체 파일을 Nano 모델로 사전 필터링 (Discovery)
+- tests/fixtures/vuln-test-app 전체 파일을 Nano 모델로 사전 필터링 (Discovery)
 - 필터링 통과 파일만 Mini 모델이 CoT 방식으로 심층 분석
 - 기존 eval_method_b.py의 구조를 재사용
 """
@@ -10,9 +10,10 @@ import json
 import time
 
 from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+load_dotenv(os.path.join(project_root, ".env"))
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, project_root)
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -261,7 +262,10 @@ def run_long_context_b(target_dir):
 
 
 if __name__ == "__main__":
-    target = os.path.join(os.path.dirname(__file__), "..", "mini_project5")
+    target = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "tests", "fixtures", "vuln-test-app",
+    )
     print("=" * 60)
     print("[*] Long Context 방식 B (멀티 에이전트, CoT) 실행 중...")
     print(f"[*] 대상: {target}")
@@ -286,7 +290,9 @@ if __name__ == "__main__":
         print(f"  {i}. [{f.get('severity','?')}] {f.get('title','N/A')} ({f.get('file_name','?')})")
     
     # 결과 저장
-    output_path = os.path.join(os.path.dirname(__file__), "result_long_context_b.json")
+    results_dir = os.path.join(os.path.dirname(__file__), "results")
+    os.makedirs(results_dir, exist_ok=True)
+    output_path = os.path.join(results_dir, "result_long_context_b.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
     print(f"\n[+] 결과 저장: {output_path}")

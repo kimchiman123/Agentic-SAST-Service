@@ -1,6 +1,6 @@
 """
 Long Context 방식 C: 멀티 에이전트 (Nano 필터링 + Mini No-CoT)
-- mini_project5 전체 파일을 Nano 모델로 사전 필터링 (Discovery)
+- tests/fixtures/vuln-test-app 전체 파일을 Nano 모델로 사전 필터링 (Discovery)
 - 필터링 통과 파일만 Mini 모델이 분석 (CoT 없이 즉각 반환)
 - CoT 유무에 따른 토큰 소모량 차이 분석용
 """
@@ -10,9 +10,10 @@ import json
 import time
 
 from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+load_dotenv(os.path.join(project_root, ".env"))
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, project_root)
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -238,7 +239,10 @@ def run_long_context_c(target_dir):
     }
 
 if __name__ == "__main__":
-    target = os.path.join(os.path.dirname(__file__), "..", "mini_project5")
+    target = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "tests", "fixtures", "vuln-test-app",
+    )
     print("=" * 60)
     print("[*] Long Context 방식 C (멀티 에이전트, No-CoT) 실행 중...")
     print("=" * 60)
@@ -254,6 +258,8 @@ if __name__ == "__main__":
     print(f"  소요 시간: {result['time_seconds']}초")
     print(f"  탐지 수: {result['findings_count']}개")
     
-    output_path = os.path.join(os.path.dirname(__file__), "result_long_context_c.json")
+    results_dir = os.path.join(os.path.dirname(__file__), "results")
+    os.makedirs(results_dir, exist_ok=True)
+    output_path = os.path.join(results_dir, "result_long_context_c.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)

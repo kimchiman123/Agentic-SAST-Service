@@ -65,7 +65,7 @@ with collect_runs() as cb:
 ```
 
 ### 3단계: 정량 평가 자동화 스크립트 및 LangSmith 연동
-정량 평가 스크립트([calculate_metrics.py](file:///c:/Users/kh2910/Desktop/Agentic-SAST-Service/Agentic-SAST-Service/test/calculate_metrics.py))와 연계하여, 평가 결과를 LangSmith의 Run Metadata에 추가 기록하거나 LangSmith Dataset으로 변환하여 업로드합니다.
+정량 평가 스크립트(`benchmarks/agent_consistency/calculate_metrics.py`)와 연계하여, 평가 결과를 LangSmith의 Run Metadata에 추가 기록하거나 LangSmith Dataset으로 변환하여 업로드합니다.
 
 ---
 
