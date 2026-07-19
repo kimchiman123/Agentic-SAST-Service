@@ -7,6 +7,8 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from core.path_policy import PathPolicyError, ScanPathPolicy
+
 
 class SemgrepRunner:
     """
@@ -19,7 +21,8 @@ class SemgrepRunner:
     # 기본 Semgrep 규칙셋 (OWASP, 보안 관련 자동 탐지)
     DEFAULT_RULES = "p/default"
 
-    def __init__(self, rules: str = DEFAULT_RULES) -> None:
+    def __init__(self, policy: ScanPathPolicy, rules: str = DEFAULT_RULES) -> None:
+        self.policy = policy
         self.rules = rules
 
     def _check_docker_available(self) -> bool:
@@ -43,10 +46,10 @@ class SemgrepRunner:
         Returns:
             Semgrep 실행 결과(JSON 파싱된 딕셔너리) 또는 실패 시 None
         """
-        abs_path = os.path.abspath(target_path)
-
-        if not os.path.isdir(abs_path):
-            print(f"[!] 오류: 타겟 경로가 존재하지 않습니다 -> {abs_path}")
+        try:
+            abs_path = str(self.policy.validate_directory(target_path))
+        except PathPolicyError:
+            print("[!] 오류: 허용되지 않은 타겟 경로입니다.")
             return None
 
         if not self._check_docker_available():
@@ -66,7 +69,24 @@ class SemgrepRunner:
             "semgrep", "scan",
             "--config", self.rules,
             "--json",
-            "--no-git-ignore",
+            "--exclude", ".env*",
+            "--exclude", ".git",
+            "--exclude", "node_modules",
+            "--exclude", "vendor",
+            "--exclude", "reports",
+            "--exclude", "generated",
+            "--exclude", ".ssh",
+            "--exclude", ".aws",
+            "--exclude", ".kube",
+            "--exclude", "credentials*",
+            "--exclude", "secrets*",
+            "--exclude", "id_rsa",
+            "--exclude", "*.key",
+            "--exclude", "*.pem",
+            "--exclude", "*.p12",
+            "--exclude", "*.pfx",
+            "--exclude", "*.db",
+            "--exclude", "*.sqlite*",
             "/src"
         ]
 
@@ -85,7 +105,7 @@ class SemgrepRunner:
             # Semgrep은 취약점 발견 시 exit code 1을 반환할 수 있음
             if result.returncode not in (0, 1):
                 print(f"[!] Semgrep 실행 실패 (exit code: {result.returncode})")
-                print(f"[!] stderr: {result.stderr[:500]}")
+                print("[!] Semgrep 상세 오류는 로컬 debug 로그에서만 확인하세요.")
                 return None
 
             scan_data = json.loads(result.stdout)
@@ -98,10 +118,10 @@ class SemgrepRunner:
             print("[!] 오류: Semgrep 실행 시간이 초과되었습니다 (5분 제한).")
             return None
         except json.JSONDecodeError as e:
-            print(f"[!] 오류: Semgrep 결과 JSON 파싱 실패 -> {e}")
+            print(f"[!] 오류: Semgrep 결과 JSON 파싱 실패 ({type(e).__name__})")
             return None
         except Exception as e:
-            print(f"[!] 오류: Semgrep 실행 중 예외 발생 -> {e}")
+            print(f"[!] 오류: Semgrep 실행 중 예외 발생 ({type(e).__name__})")
             return None
 
     def parse_findings(self, scan_data: Dict[str, Any]) -> List[Dict[str, Any]]:

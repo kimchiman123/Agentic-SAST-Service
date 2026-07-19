@@ -6,6 +6,8 @@ Semgrep 스캔 결과를 바탕으로 취약점 주변 코드와 프로젝트 �
 import os
 from typing import Any, Dict, List
 
+from core.path_policy import PathPolicyError, ScanPathPolicy
+
 # 보안상 중요한 핵심 비즈니스 로직 경로/키워드 패턴
 CRITICAL_PATH_KEYWORDS = [
     "auth", "login", "session", "token", "jwt",
@@ -31,7 +33,7 @@ SOURCE_EXTENSIONS = {
 }
 
 
-def _build_directory_tree(target_dir: str, max_depth: int = 4) -> str:
+def _build_directory_tree(target_dir: str, policy: ScanPathPolicy, max_depth: int = 4) -> str:
     """프로젝트 디렉토리 구조를 텍스트 트리 형태로 변환합니다."""
     lines: List[str] = []
 
@@ -49,12 +51,20 @@ def _build_directory_tree(target_dir: str, max_depth: int = 4) -> str:
             if not any(ex in e.lower() for ex in EXCLUDE_PATTERNS)
         ]
 
-        for i, entry in enumerate(entries):
+        safe_entries = []
+        for entry in entries:
+            try:
+                policy.resolve(os.path.join(path, entry))
+                safe_entries.append(entry)
+            except PathPolicyError:
+                continue
+
+        for i, entry in enumerate(safe_entries):
             full_path = os.path.join(path, entry)
-            connector = "└── " if i == len(entries) - 1 else "├── "
+            connector = "└── " if i == len(safe_entries) - 1 else "├── "
             lines.append(f"{prefix}{connector}{entry}")
             if os.path.isdir(full_path):
-                extension = "    " if i == len(entries) - 1 else "│   "
+                extension = "    " if i == len(safe_entries) - 1 else "│   "
                 _walk(full_path, prefix + extension, depth + 1)
 
     lines.append(os.path.basename(target_dir) + "/")
@@ -62,18 +72,19 @@ def _build_directory_tree(target_dir: str, max_depth: int = 4) -> str:
     return "\n".join(lines)
 
 
-def _read_file_lines(file_path: str) -> List[str]:
+def _read_file_lines(file_path: str, policy: ScanPathPolicy) -> List[str]:
     """파일 내용을 줄 단위로 읽어옵니다."""
     try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        safe_path = policy.validate_file(file_path)
+        with safe_path.open("r", encoding="utf-8", errors="ignore") as f:
             return f.readlines()
-    except (FileNotFoundError, PermissionError):
+    except (FileNotFoundError, PermissionError, PathPolicyError):
         return []
 
 
-def _extract_code_snippet(file_path: str, start_line: int, end_line: int, context_lines: int = 50) -> str:
+def _extract_code_snippet(file_path: str, start_line: int, end_line: int, policy: ScanPathPolicy, context_lines: int = 50) -> str:
     """취약점 위치 주변의 코드 스니펫을 추출합니다."""
-    lines = _read_file_lines(file_path)
+    lines = _read_file_lines(file_path, policy)
     if not lines:
         return ""
 
@@ -102,7 +113,8 @@ class ContextExtractor:
     Semgrep 결과 기반 취약 지점 + 핵심 비즈니스 로직을 모두 수집합니다.
     """
 
-    def __init__(self, context_lines: int = 50) -> None:
+    def __init__(self, policy: ScanPathPolicy, context_lines: int = 50) -> None:
+        self.policy = policy
         self.context_lines = context_lines
 
     def extract_contexts(self, scan_results: Dict[str, Any], target_dir: str) -> List[Dict[str, Any]]:
@@ -117,8 +129,8 @@ class ContextExtractor:
         Returns:
             추출된 컨텍스트 목록
         """
-        abs_target = os.path.abspath(target_dir)
-        tree = _build_directory_tree(abs_target)
+        abs_target = str(self.policy.validate_directory(target_dir))
+        tree = _build_directory_tree(abs_target, self.policy)
         contexts: List[Dict[str, Any]] = []
 
         for finding in scan_results.get("results", []):
@@ -132,7 +144,11 @@ class ContextExtractor:
             start_line = finding.get("start", {}).get("line", 1)
             end_line = finding.get("end", {}).get("line", start_line)
 
-            snippet = _extract_code_snippet(file_path, start_line, end_line, self.context_lines)
+            try:
+                safe_file = self.policy.validate_file(file_path)
+            except PathPolicyError:
+                continue
+            snippet = _extract_code_snippet(str(safe_file), start_line, end_line, self.policy, self.context_lines)
             if not snippet:
                 continue
 
@@ -141,7 +157,7 @@ class ContextExtractor:
                 "rule_id": finding.get("check_id", "unknown"),
                 "severity": finding.get("extra", {}).get("severity", "WARNING"),
                 "message": finding.get("extra", {}).get("message", ""),
-                "file_path": os.path.relpath(file_path, abs_target),
+                "file_path": self.policy.safe_relative_path(safe_file, expected_type="file"),
                 "start_line": start_line,
                 "end_line": end_line,
                 "code_snippet": snippet,
@@ -162,15 +178,21 @@ class ContextExtractor:
         Returns:
             핵심 파일의 전체 코드와 메타데이터 목록
         """
-        abs_target = os.path.abspath(target_dir)
+        abs_target = str(self.policy.validate_directory(target_dir))
         critical_contexts: List[Dict[str, Any]] = []
 
         for root, dirs, files in os.walk(abs_target):
             # 제외 대상 디렉토리 스킵
-            dirs[:] = [
-                d for d in dirs
-                if not any(ex in d.lower() for ex in EXCLUDE_PATTERNS)
-            ]
+            safe_dirs = []
+            for directory in dirs:
+                if any(ex in directory.lower() for ex in EXCLUDE_PATTERNS):
+                    continue
+                try:
+                    self.policy.validate_directory(os.path.join(root, directory))
+                    safe_dirs.append(directory)
+                except PathPolicyError:
+                    continue
+            dirs[:] = safe_dirs
 
             for filename in files:
                 ext = os.path.splitext(filename)[1].lower()
@@ -178,12 +200,16 @@ class ContextExtractor:
                     continue
 
                 full_path = os.path.join(root, filename)
-                rel_path = os.path.relpath(full_path, abs_target)
+                try:
+                    safe_file = self.policy.validate_file(full_path)
+                except PathPolicyError:
+                    continue
+                rel_path = self.policy.safe_relative_path(safe_file, expected_type="file")
 
                 if not _is_critical_file(rel_path):
                     continue
 
-                content = "".join(_read_file_lines(full_path))
+                content = "".join(_read_file_lines(str(safe_file), self.policy))
                 if not content.strip():
                     continue
 
@@ -191,7 +217,7 @@ class ContextExtractor:
                     "type": "critical_logic",
                     "file_path": rel_path,
                     "content": content,
-                    "size_bytes": os.path.getsize(full_path),
+                    "size_bytes": safe_file.stat().st_size,
                 })
 
         print(f"[+] 핵심 비즈니스 로직 파일 {len(critical_contexts)}개 식별 완료")

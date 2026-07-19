@@ -5,7 +5,7 @@ LangGraph에서 사용할 상태(State) 정의 모델입니다.
 from typing import TypedDict, List, Dict, Any, Annotated
 import operator
 
-class AnalysisState(TypedDict):
+class AnalysisState(TypedDict, total=False):
     """
     단일 코드 컨텍스트 분석을 위한 상태 모델
     
@@ -27,3 +27,13 @@ class AnalysisState(TypedDict):
     search_result: str
     iteration: int
     messages: Annotated[List[Any], operator.add]
+    analysis_plan: Dict[str, Any]
+    candidate_findings: List[Dict[str, Any]]
+    verification: Dict[str, Any]
+    tool_rounds: int
+    max_tool_rounds: int
+    revision_count: int
+    web_search_count: int
+    phase: str
+    stop_reason: str
+    errors: List[str]

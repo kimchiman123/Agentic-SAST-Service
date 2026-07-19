@@ -25,6 +25,6 @@ def perform_web_search(query: str, max_results: int = 3) -> str:
                 formatted_results.append(f"[{i}] {title}\n요약: {body}\n출처: {link}")
                 
             return "\n\n".join(formatted_results)
-    except Exception as e:
-        print(f"  [!] 웹 검색 중 오류 발생: {e}")
-        return f"웹 검색 통신 실패: {e}"
+    except Exception as exc:
+        print(f"  [!] 웹 검색 중 오류 발생: {type(exc).__name__}")
+        return "웹 검색 통신 실패"

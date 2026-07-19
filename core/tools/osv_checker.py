@@ -3,21 +3,24 @@ import json
 import urllib.request
 from typing import List, Dict, Any
 
-def scan_dependencies(target_dir: str) -> List[Dict[str, Any]]:
+from core.path_policy import PathPolicyError, ScanPathPolicy
+
+def scan_dependencies(target_dir: str, policy: ScanPathPolicy) -> List[Dict[str, Any]]:
     """
     target_dir 내부에 package.json, requirements.txt 등이 있는지 확인 후,
     OSV.dev API를 호출하여 취약점 목록을 획득합니다.
     (현재 npm package.json만 시범 지원 구성)
     """
-    package_json_path = os.path.join(target_dir, "package.json")
-    if not os.path.exists(package_json_path):
+    try:
+        package_json_path = policy.validate_file(os.path.join(target_dir, "package.json"))
+    except PathPolicyError:
         return []
 
     try:
-        with open(package_json_path, 'r', encoding='utf-8') as f:
+        with package_json_path.open('r', encoding='utf-8') as f:
             data = json.load(f)
     except Exception as e:
-        print(f"[!] package.json 파싱 실패: {e}")
+        print(f"[!] package.json 파싱 실패: {type(e).__name__}")
         return []
 
     deps = {}
@@ -27,7 +30,7 @@ def scan_dependencies(target_dir: str) -> List[Dict[str, Any]]:
         deps.update(data["devDependencies"])
 
     queries = []
-    for pkg, version in deps.items():
+    for pkg, version in list(deps.items())[:200]:
         # 시멘틱 버저닝 기호 제거 (^, ~, >= 등)
         clean_version = version.replace('^', '').replace('~', '').replace('>=', '').replace('>', '').replace('=', '').strip()
         queries.append({
@@ -45,7 +48,7 @@ def scan_dependencies(target_dir: str) -> List[Dict[str, Any]]:
     
     results = []
     try:
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, timeout=20) as response:
             res_data = json.loads(response.read().decode('utf-8'))
             
             for i, result in enumerate(res_data.get("results", [])):
@@ -61,6 +64,6 @@ def scan_dependencies(target_dir: str) -> List[Dict[str, Any]]:
                             "summary": v.get("summary", "알려진 위협 (상세 내용은 OSV 참고)"),
                         })
     except Exception as e:
-        print(f"  [!] OSV API 통신 실패: {e}")
+        print(f"  [!] OSV API 통신 실패: {type(e).__name__}")
         
     return results

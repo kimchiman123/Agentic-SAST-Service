@@ -3,10 +3,11 @@ python-dotenv
 openpyxl
 PyMuPDF
 chromadb
+rank-bm25
 markdown
 pdfkit
 langgraph
 langchain-openai
 langchain-core
 pydantic
-duckduckgo-search
+ddgs
