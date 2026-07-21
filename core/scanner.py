@@ -64,7 +64,7 @@ class SemgrepRunner:
 
         cmd = [
             "docker", "run", "--rm",
-            "-v", f"{docker_mount_path}:/src",
+            "-v", f"{docker_mount_path}:/src:ro",
             self.SEMGREP_IMAGE,
             "semgrep", "scan",
             "--config", self.rules,

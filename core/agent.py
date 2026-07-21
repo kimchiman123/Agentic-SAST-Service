@@ -26,6 +26,7 @@ from core.state import AnalysisState
 from core.tools.web_search import perform_web_search
 from core.mcp_tools import create_scoped_tools
 from core.path_policy import ScanPathPolicy
+from core.batch_analysis import AnalysisBatch, BatchAnalysisError
 
 
 # ──────────────────────────────────────────────
@@ -194,7 +195,11 @@ class OpenAIAgent:
     Phase 3: LangGraph + 외부 검색(SerpAPI) 라우팅 기능을 결합한 완전 자율형 Agent.
     """
 
-    MODEL_NAME = "gpt-5.4-mini"
+    OPENAI_DISCOVERY_MODEL = "gpt-5.4-nano"
+    OPENAI_ANALYSIS_MODEL = "gpt-5.4-mini"
+    NVIDIA_DISCOVERY_MODEL = "openai/gpt-oss-20b"
+    NVIDIA_ANALYSIS_MODEL = "openai/gpt-oss-120b"
+    NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
     def __init__(
         self,
@@ -204,16 +209,36 @@ class OpenAIAgent:
         target_root: str,
         api_key: Optional[str] = None,
         limits: Optional[AnalysisLimits] = None,
+        model: Optional[str] = None,
+        context_window_tokens: Optional[int] = None,
         enable_web_search: bool = False,
     ) -> None:
-        api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        api_key = api_key or os.environ.get("NVIDIA_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("[!] OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
+            raise ValueError("[!] NVIDIA_API_KEY 또는 OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
+
+        is_nvidia = api_key.startswith("nvapi-")
+        discovery_model = (
+            os.environ.get("NVIDIA_DISCOVERY_MODEL", self.NVIDIA_DISCOVERY_MODEL)
+            if is_nvidia else self.OPENAI_DISCOVERY_MODEL
+        )
+        analysis_model = (
+            os.environ.get("NVIDIA_ANALYSIS_MODEL", self.NVIDIA_ANALYSIS_MODEL)
+            if is_nvidia else self.OPENAI_ANALYSIS_MODEL
+        )
+        if model:
+            analysis_model = model
+        provider_options = {"base_url": self.NVIDIA_BASE_URL} if is_nvidia else {}
+        self.provider = "nvidia" if is_nvidia else "openai"
+        self.discovery_model_name = discovery_model
+        self.analysis_model_name = analysis_model
+        self.context_window_tokens = context_window_tokens
 
         # Discovery Agent (가볍고 빠른 필터링) - Stage 2
         self.nano_llm = ChatOpenAI(
-            model="gpt-5.4-nano", api_key=api_key, temperature=0.0,
-            request_timeout=60, max_retries=2,
+            model=discovery_model, api_key=api_key, temperature=0.0,
+            request_timeout=60, max_retries=0,
+            **provider_options,
         )
         self.discovery_llm = self.nano_llm.with_structured_output(DiscoveryModel)
         self.planner_llm = self.nano_llm.with_structured_output(AnalysisPlan)
@@ -221,8 +246,9 @@ class OpenAIAgent:
         
         # Analysis Agent (심층 분석 및 Tool Calling) - Stage 3
         self.mini_llm = ChatOpenAI(
-            model="gpt-5.4-mini", api_key=api_key, temperature=0.1,
-            request_timeout=90, max_retries=2,
+            model=analysis_model, api_key=api_key, temperature=0.1,
+            request_timeout=90, max_retries=0,
+            **provider_options,
         )
         self.structured_llm = self.mini_llm.with_structured_output(OutputModel)
         
@@ -237,6 +263,53 @@ class OpenAIAgent:
         self.budget = ScanBudget(self.limits)
         self.enable_web_search = enable_web_search
         self.graph = self._build_graph()
+
+    def run_batch_pass(self, batch: AnalysisBatch, mode: str) -> Dict[str, Any]:
+        """Provider adapter used by the deterministic two-pass batch contract.
+
+        The raw model response is accepted only when it is JSON and carries one
+        result for every supplied context ID.  ``batch_analysis`` performs the
+        final ID validation and ordering.
+        """
+        if not self.budget.consume_llm():
+            raise BatchAnalysisError("request_budget_exhausted", self.budget.stop_reason() or "LLM budget exhausted")
+        if mode not in {"analysis", "verification"}:
+            raise BatchAnalysisError("invalid_mode", "Unsupported batch pass.")
+        item_payloads = [dict(item.payload, context_id=item.context_id) for item in batch.items]
+        if mode == "analysis":
+            instruction = (
+                "Analyze each SAST context independently. Return JSON only in the form "
+                '{"items":[{"context_id":"...","status":"ok|error","summary":"...",'
+                '"evidence":"...","needs_tool":false,"findings":[]}]}. '
+                "Every input context_id must appear exactly once. Never include API keys or full unrelated source."
+            )
+            payload = {"shared": dict(batch.envelope), "items": item_payloads}
+        else:
+            instruction = (
+                "Verify the supplied analyses. Return JSON only in the form "
+                '{"items":[{"context_id":"...","status":"ok|error","verdict":"tp|fp|unknown|error",'
+                '"rationale":"...","improvement":"..."}]}. '
+                "Every input context_id must appear exactly once."
+            )
+            payload = {"analyses": dict(batch.envelope).get("analyses", []), "items": item_payloads}
+        response = self.mini_llm.invoke([
+            SystemMessage(content="You are a security analysis service. Follow the requested JSON schema exactly."),
+            HumanMessage(content=f"{instruction}\n\n{json.dumps(payload, ensure_ascii=False)}"),
+        ])
+        content = getattr(response, "content", response)
+        if not isinstance(content, str):
+            raise BatchAnalysisError("schema_invalid", "LLM returned a non-text response.")
+        candidate = content.strip()
+        if candidate.startswith("```"):
+            candidate = candidate.split("\n", 1)[-1]
+            candidate = candidate.rsplit("```", 1)[0].strip()
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            raise BatchAnalysisError("response_not_json", "LLM response is not valid JSON.") from exc
+        if not isinstance(parsed, dict):
+            raise BatchAnalysisError("schema_invalid", "LLM response must be a JSON object.")
+        return parsed
 
     def _build_graph(self):
         """LangGraph 워크플로우를 조립합니다."""

@@ -1,50 +1,51 @@
-"""Agentic-SAST-Guardian CLI 진입점."""
+"""Single local entrypoint for Agentic SAST Guardian."""
 
 from __future__ import annotations
 
-import argparse
+import os
+import subprocess
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-from core.pipeline import PipelineBusyError, run_pipeline
+
+_CHILD_FLAG = "AGENTIC_SAST_STREAMLIT_CHILD"
 
 
-def _fmt_elapsed(seconds: float) -> str:
-    if seconds < 60:
-        return f"{seconds:.1f}초"
-    minutes = int(seconds // 60)
-    return f"{minutes}분 {seconds % 60:.1f}초"
+def _is_streamlit_child(environ: dict[str, str] | None = None) -> bool:
+    return (environ or os.environ).get(_CHILD_FLAG) == "1"
 
 
-def _print_progress(phase: str, message: str, _progress: float) -> None:
-    print(f"[{phase}] {message}")
+def _child_command() -> list[str]:
+    return [sys.executable, "-m", "streamlit", "run", str(Path(__file__).resolve())]
+
+
+def _launch_streamlit() -> int:
+    environment = os.environ.copy()
+    environment[_CHILD_FLAG] = "1"
+    child = subprocess.Popen(_child_command(), env=environment)
+    try:
+        return child.wait()
+    except KeyboardInterrupt:
+        child.terminate()
+        try:
+            child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+        return 130
 
 
 def main() -> int:
-    load_dotenv()
-    parser = argparse.ArgumentParser(description="Agentic-SAST-Guardian: AI 기반 정적 보안 분석 도구")
-    parser.add_argument("--target", required=True, help="스캔할 대상 디렉토리 경로")
-    args = parser.parse_args()
+    if _is_streamlit_child():
+        # Delayed import prevents Streamlit widgets during parent bootstrap/tests.
+        load_dotenv(Path(__file__).with_name(".env"))
+        from ui.app import render_app
 
-    try:
-        result = run_pipeline(args.target, progress_callback=_print_progress)
-    except (ValueError, OSError, PipelineBusyError) as exc:
-        print(f"[!] 분석을 시작할 수 없습니다: {type(exc).__name__}", file=sys.stderr)
-        return 1
-    except Exception as exc:
-        print(f"[!] 분석 중 오류가 발생했습니다: {type(exc).__name__}", file=sys.stderr)
-        return 1
-
-    print("=" * 60)
-    print(f"[+] 분석 완료: {len(result.findings)}개 finding, {_fmt_elapsed(result.elapsed_seconds)}")
-    print(f"    Run ID: {result.run_id}")
-    print(f"    PDF/HTML: {result.artifacts.pdf_or_html}")
-    print(f"    XLSX: {result.artifacts.xlsx}")
-    print(f"    JSON: {result.artifacts.json}")
-    if result.partial:
-        print("[!] 실행 한도에 도달해 부분 결과가 생성되었습니다.")
-    return 0
+        render_app()
+        return 0
+    return _launch_streamlit()
 
 
 if __name__ == "__main__":

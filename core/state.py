@@ -2,8 +2,31 @@
 LangGraph에서 사용할 상태(State) 정의 모델입니다.
 하나의 코드 컨텍스트(Semgrep 조각 또는 단일 파일)가 퍼이프라인을 통과할 때의 단위 상태를 나타냅니다.
 """
-from typing import TypedDict, List, Dict, Any, Annotated
+from dataclasses import dataclass, field
+from typing import TypedDict, List, Dict, Any, Annotated, Literal
 import operator
+
+
+StageName = Literal["semgrep", "agent", "verification", "report"]
+StageStatus = Literal["pending", "running", "completed", "partial", "failed", "skipped"]
+
+
+@dataclass(frozen=True)
+class StageEvent:
+    """Safe, incremental pipeline event for a local UI.
+
+    Payloads intentionally contain only summaries and stable IDs: API keys and
+    source text must never cross this boundary.
+    """
+
+    run_id: str
+    stage: StageName
+    status: StageStatus
+    current: int = 0
+    total: int = 0
+    message: str = ""
+    error_code: str | None = None
+    payload: Dict[str, Any] = field(default_factory=dict)
 
 class AnalysisState(TypedDict, total=False):
     """
